@@ -82,10 +82,6 @@ async def admin_leads(request: Request, q: str = "", limit: int = 50):
               </tbody>
             </table>
           </div>
-
-          <p class="text-xs text-slate-500 mt-3">
-            Dica: para proteger, defina ADMIN_TOKEN e acesse com ?token=SEU_TOKEN ou header x-admin-token.
-          </p>
         </div>
       </body>
     </html>
