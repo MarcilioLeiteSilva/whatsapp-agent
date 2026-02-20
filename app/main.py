@@ -247,5 +247,12 @@ async def webhook(req: Request):
     # 📤 Envio de resposta
     # ========================================
     logger.info("SEND_TEXT: to=%s chars=%s", number, len(reply or ""))
-    await evo.send_text(number, reply)
-    return {"ok": True}
+    
+    
+    try:
+        await evo.send_text(number, reply)
+    except Exception as e:
+        logger.error("SEND_TEXT_ERROR: %s", e)
+        return {"ok": True, "sent": False}
+
+    return {"ok": True, "sent": True}
