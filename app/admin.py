@@ -41,6 +41,7 @@ async def admin_leads(request: Request, q: str = "", limit: int = 50):
           <td>{l.get('status','')}</td>
           <td>{l.get('origem','')}</td>
           <td>{l.get('created_at','')}</td>
+          <td>{l.get('intent_detected','')}</td>
         </tr>
         """)
 
@@ -75,6 +76,7 @@ async def admin_leads(request: Request, q: str = "", limit: int = 50):
                   <th class="text-left p-3">Status</th>
                   <th class="text-left p-3">Origem</th>
                   <th class="text-left p-3">Criado</th>
+                  <th class="text-left p-3">Intent</th>
                 </tr>
               </thead>
               <tbody>
