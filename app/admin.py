@@ -1,8 +1,11 @@
+from datetime import datetime
+import pytz
 import os
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from .lead_logger import get_last_leads
 
+BR_TZ = pytz.timezone("America/Sao_Paulo")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
 router = APIRouter()
