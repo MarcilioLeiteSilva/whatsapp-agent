@@ -5,8 +5,12 @@ from fastapi import FastAPI, Request
 from .evolution import EvolutionClient
 from .store import MemoryStore
 from .rules import reply_for, detect_intents
-from .lead_logger import ensure_first_contact, mark_intent, save_handoff_lead, get_last_leads
-
+from .lead_logger import (
+    ensure_first_contact,
+    mark_intent,
+    save_handoff_lead,
+    get_last_leads,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("agent")
@@ -18,20 +22,96 @@ evo = EvolutionClient()
 store = MemoryStore()
 
 
+def extract_text(msg: dict) -> str:
+    """
+    Extrai texto de diferentes formatos de mensagens WhatsApp.
+    Mantém compatibilidade com variações de payload (conversation, extendedTextMessage, botões, listas, mídia com caption).
+    """
+    if not isinstance(msg, dict):
+        return ""
+
+    # texto simples
+    if msg.get("conversation"):
+        return msg.get("conversation") or ""
+
+    # texto longo / reply
+    etm = msg.get("extendedTextMessage") or {}
+    if isinstance(etm, dict) and etm.get("text"):
+        return etm.get("text") or ""
+
+    # respostas de botões (dependendo do provedor)
+    brm = msg.get("buttonsResponseMessage") or {}
+    if isinstance(brm, dict):
+        if brm.get("selectedDisplayText"):
+            return brm.get("selectedDisplayText") or ""
+        if brm.get("selectedButtonId"):
+            return brm.get("selectedButtonId") or ""
+
+    # respostas de lista
+    lrm = msg.get("listResponseMessage") or {}
+    if isinstance(lrm, dict):
+        ssr = lrm.get("singleSelectReply") or {}
+        if isinstance(ssr, dict) and ssr.get("selectedRowId"):
+            return ssr.get("selectedRowId") or ""
+        if lrm.get("title"):
+            return lrm.get("title") or ""
+
+    # mídia com legenda
+    for k in ("imageMessage", "videoMessage", "documentMessage"):
+        m = msg.get(k) or {}
+        if isinstance(m, dict) and m.get("caption"):
+            return m.get("caption") or ""
+
+    return ""
+
+
 def extract_payload(payload: dict):
-    instance = payload.get("instance")
-    d = payload.get("data", payload)
+    """
+    Normaliza o payload do webhook da Evolution (ou variações) para:
+    instance, message_id, from_number, text, from_me, is_group, event, status
+    """
+    # instance pode vir em chaves diferentes
+    instance = (payload.get("instance") or payload.get("instanceId") or "").strip()
 
-    message_id = d.get("key", {}).get("id") or ""
-    remote = d.get("key", {}).get("remoteJid") or ""
-    from_number = remote.replace("@s.whatsapp.net", "")
+    # muitos provedores colocam dentro de payload["data"]
+    d = payload.get("data") or payload
 
-    msg = d.get("message", {}) or {}
-    text = msg.get("conversation") or ""
+    # algumas variações mandam lista: data["messages"][0]
+    if isinstance(d, dict) and isinstance(d.get("messages"), list) and d["messages"]:
+        d0 = d["messages"][0] or {}
+        if isinstance(d0, dict):
+            d = d0
 
-    from_me = bool(d.get("key", {}).get("fromMe"))
+    key = (d.get("key") or {}) if isinstance(d, dict) else {}
+
+    # id pode variar de campo
+    message_id = (key.get("id") or d.get("messageId") or d.get("id") or "").strip()
+
+    # remoteJid pode variar de campo
+    remote = (
+        (key.get("remoteJid") or d.get("remoteJid") or d.get("from") or "")
+        if isinstance(d, dict)
+        else ""
+    ).strip()
+
+    from_number = (
+        remote.replace("@s.whatsapp.net", "")
+        .replace("@c.us", "")
+        .replace("whatsapp:", "")
+        .strip()
+    )
+
+    # mensagem pode variar de campo
+    msg = (d.get("message") or d.get("msg") or {}) if isinstance(d, dict) else {}
+    text = extract_text(msg).strip()
+
+    from_me = bool(key.get("fromMe") or (d.get("fromMe") if isinstance(d, dict) else False))
     is_group = remote.endswith("@g.us")
-    return instance, message_id, from_number, text, from_me, is_group
+
+    event = (payload.get("event") or "").lower()
+    status = ((d.get("status") if isinstance(d, dict) else None) or payload.get("status") or "").upper()
+
+    return instance, message_id, from_number, text, from_me, is_group, event, status
 
 
 @app.get("/health")
@@ -44,16 +124,38 @@ async def webhook(req: Request):
     payload = await req.json()
     logger.info("WEBHOOK: %s", payload)
 
-    instance, message_id, number, text, from_me, is_group = extract_payload(payload)
+    instance, message_id, number, text, from_me, is_group, event, status = extract_payload(payload)
 
+    logger.info(
+        "EXTRACTED: instance=%s id=%s number=%s text=%r from_me=%s group=%s event=%s status=%s",
+        instance,
+        message_id,
+        number,
+        text,
+        from_me,
+        is_group,
+        event,
+        status,
+    )
+
+    # -------------------------
+    # ✅ Filtros de eventos ACK/update
+    # -------------------------
+    # Ex.: messages.update / deliveries / read receipts etc.
+    if "update" in event or status in {"ACK", "READ", "DELIVERED", "DELIVERED_TO_DEVICE"}:
+        return {"ok": True, "ignored": "ack/update"}
+
+    # ignora mensagens enviadas por nós ou em grupo
     if from_me or is_group:
-        return {"ok": True}
+        return {"ok": True, "ignored": "from_me/group"}
 
-    if store.seen(message_id):
-        return {"ok": True}
+    # dedup: só aplica se tiver id
+    if message_id and store.seen(message_id):
+        return {"ok": True, "ignored": "dedup"}
 
+    # se não conseguiu extrair número/texto, não segue
     if not number or not text:
-        return {"ok": True}
+        return {"ok": True, "ignored": "missing_number_or_text"}
 
     # ================================
     # ✅ Captura automática (D)
@@ -100,6 +202,7 @@ async def webhook(req: Request):
                 f"🏷️ {l.get('status') or '-'} | {l.get('origem') or '-'}\n\n"
             )
 
+        logger.info("ADMIN_LEADS_SEND: number=%s", number)
         await evo.send_text(number, msg[:3500])
         return {"ok": True}
 
@@ -107,6 +210,7 @@ async def webhook(req: Request):
     # 🤖 Regras normais do bot
     # ========================================
     reply = reply_for(number, text, state)
+    logger.info("RULES_REPLY: number=%s reply=%r step=%s", number, reply, (state or {}).get("step"))
 
     if reply is None:
         return {"ok": True, "paused": True}
@@ -126,7 +230,6 @@ async def webhook(req: Request):
             telefone = (lead.get("telefone") or "").strip()
             assunto = (lead.get("assunto") or "").strip()
 
-            # salva no Postgres (e faz backup CSV se habilitado)
             save_handoff_lead(
                 instance=instance,
                 from_number=number,
@@ -140,5 +243,9 @@ async def webhook(req: Request):
     except Exception as e:
         logger.error("LEAD_SAVE_ERROR: %s", e)
 
+    # ========================================
+    # 📤 Envio de resposta
+    # ========================================
+    logger.info("SEND_TEXT: to=%s chars=%s", number, len(reply or ""))
     await evo.send_text(number, reply)
     return {"ok": True}
