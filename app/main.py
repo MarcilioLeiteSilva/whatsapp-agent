@@ -130,6 +130,11 @@ def extract_payload(payload: dict):
     return instance, message_id, from_number, text, from_me, is_group, event, status
 
 
+@app.get("/")
+async def root():
+    return {"ok": True}
+
+
 @app.get("/health")
 async def health():
     return {"ok": True}
