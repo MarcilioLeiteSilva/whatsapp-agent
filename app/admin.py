@@ -49,6 +49,7 @@ async def admin_leads(request: Request, q: str = "", limit: int = 50):
     <html>
       <head>
         <meta charset="utf-8" />
+        <meta http-equiv="refresh" content="10">
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Leads</title>
         <script src="https://cdn.tailwindcss.com"></script>
