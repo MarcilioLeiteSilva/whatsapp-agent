@@ -21,6 +21,24 @@ async def admin_leads(request: Request, q: str = "", limit: int = 50):
     if not _auth_ok(request):
         return HTMLResponse("<h3>Unauthorized</h3>", status_code=401)
 
+    def format_dt(value):
+    if not value:
+        return ""
+    try:
+        if isinstance(value, str):
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        else:
+            dt = value
+
+        if dt.tzinfo is None:
+            dt = pytz.utc.localize(dt)
+
+        dt_br = dt.astimezone(BR_TZ)
+        return dt_br.strftime("%d/%m/%Y %H:%M:%S")
+    except Exception:
+        return str(value)
+
+    
     leads = get_last_leads(limit=min(limit, 200))  # já existe no seu lead_logger
     if q:
         ql = q.lower()
@@ -43,7 +61,7 @@ async def admin_leads(request: Request, q: str = "", limit: int = 50):
           <td>{l.get('assunto','')}</td>
           <td>{l.get('status','')}</td>
           <td>{l.get('origem','')}</td>
-          <td>{l.get('created_at','')}</td>
+          <td>{format_dt(l.get('created_at'))}</td>
           <td>{l.get('intent_detected','')}</td>
         </tr>
         """)
