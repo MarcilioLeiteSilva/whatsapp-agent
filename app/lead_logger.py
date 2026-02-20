@@ -116,8 +116,12 @@ def get_last_leads(limit: int = 5) -> list[dict]:
 
     out = []
     for r in rows:
-        out.append({
+        
+      out.append({
+            "id": int(r.id) if r.id is not None else None,
             "created_at": str(r.created_at),
+            "updated_at": str(r.updated_at) if getattr(r, "updated_at", None) else None,
+            "first_seen_at": str(r.first_seen_at) if getattr(r, "first_seen_at", None) else None,
             "instance": r.instance,
             "from_number": r.from_number,
             "nome": r.nome,
@@ -126,5 +130,6 @@ def get_last_leads(limit: int = 5) -> list[dict]:
             "status": r.status,
             "origem": r.origem,
             "intent_detected": r.intent_detected,
-        })
+        })  
+    
     return out
