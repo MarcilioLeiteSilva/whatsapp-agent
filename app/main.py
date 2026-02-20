@@ -202,17 +202,25 @@ async def webhook(req: Request):
     # -------------------------
     # ✅ Filtrar ACK/status/update (ruído)
     # -------------------------
-    if "update" in event or status in {
+    # ✅ Filtrar ACK/status/update (ruído)
+# Importante: a Evolution pode enviar messages.upsert com status (ex: DELIVERY_ACK)
+# junto com uma mensagem real. Então só ignoramos "status" quando NÃO há texto.
+    if "update" in event:
+        WEBHOOK_IGNORED.labels("update").inc()
+        WEBHOOK_LATENCY.observe(time.time() - start)
+        return {"ok": True, "ignored": "update"}
+
+    if status in {
         "ACK",
         "READ",
         "DELIVERED",
         "DELIVERED_TO_DEVICE",
         "SERVER_ACK",
         "DELIVERY_ACK",
-    }:
-        WEBHOOK_IGNORED.labels("ack/status").inc()
+    } and not text:
+        WEBHOOK_IGNORED.labels("ack/status_no_text").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
-        return {"ok": True, "ignored": "ack/status"}
+        return {"ok": True, "ignored": "ack/status_no_text"}
 
     # ignora mensagens enviadas por nós ou em grupo
     if from_me or is_group:
