@@ -144,7 +144,21 @@ async def webhook(req: Request):
     # Ex.: messages.update / deliveries / read receipts etc.
     if "update" in event or status in {"ACK", "READ", "DELIVERED", "DELIVERED_TO_DEVICE"}:
         return {"ok": True}
-        
+
+    if "update" in event or status in {
+        "ACK",
+        "READ",
+        "DELIVERED",
+        "DELIVERED_TO_DEVICE",
+        "SERVER_ACK",
+        "DELIVERY_ACK"
+    }:
+        return {"ok": True, "ignored": "ack/status"}
+
+
+
+
+    
     # ignora mensagens enviadas por nós ou em grupo
     if from_me or is_group:
         return {"ok": True, "ignored": "from_me/group"}
