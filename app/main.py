@@ -142,15 +142,8 @@ async def webhook(req: Request):
     # ✅ Filtros de eventos ACK/update
     # -------------------------
     # Ex.: messages.update / deliveries / read receipts etc.
-    if "update" in event or status in {
-        "ACK",
-        "READ",
-        "DELIVERED",
-        "DELIVERED_TO_DEVICE",
-        "SERVER_ACK",
-        "DELIVERY_ACK"
-    }:
-        return {"ok": True, "ignored": "ack/status"}
+    if "update" in event or status in {"ACK", "READ", "DELIVERED", "DELIVERED_TO_DEVICE"}:
+        return {"ok": True}
 
     # ignora mensagens enviadas por nós ou em grupo
     if from_me or is_group:
