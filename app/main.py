@@ -280,7 +280,14 @@ async def webhook(req: Request):
 
         intents = detect_intents(text)
         if intents:
-            mark_intent(instance=instance, from_number=number, intents=intents)
+            mark_intent(
+        client_id=client_id,
+        agent_id=agent_id,
+        instance=instance,
+        from_number=number,
+        intents=intents
+)
+            
             LEAD_INTENT_MARKED.inc()
     except Exception as e:
         # Não derruba o atendimento se o banco falhar
