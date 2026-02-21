@@ -12,7 +12,7 @@ CSV_BACKUP_ENABLED = os.getenv("CSV_BACKUP_ENABLED", "true").lower() in ("1", "t
 def _utc_now():
     return datetime.now(timezone.utc)
 
-def ensure_first_contact(instance: str, from_number: str) -> int:
+def ensure_first_contact(client_id, agent_id, instance, from_number): -> int:
     """
     Cria um registro 'iniciado' no primeiro contato.
     Retorna o id do lead mais recente para esse número/instância/cliente.
@@ -30,12 +30,14 @@ def ensure_first_contact(instance: str, from_number: str) -> int:
             return row.id
 
         new_lead = Lead(
-            client_id=CLIENT_ID,
+            client_id=client_id,
+            agent_id=agent_id,
             instance=instance,
             from_number=from_number,
             status="iniciado",
-            origem="primeiro_contato",
+            status="primeiro_contato"
         )
+        
         db.add(new_lead)
         db.commit()
         db.refresh(new_lead)
