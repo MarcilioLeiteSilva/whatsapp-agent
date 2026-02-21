@@ -1,56 +1,120 @@
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import BigInteger, Text, Boolean, DateTime, func
-from sqlalchemy import Column, Text, TIMESTAMP, ForeignKey
-from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
-from .db import Base
+from __future__ import annotations
 
+from typing import Optional
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Text,
+    TIMESTAMP,
+    func,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+# ==========================================================
+# Base
+# ==========================================================
+class Base(DeclarativeBase):
+    pass
+
+
+# ==========================================================
+# SaaS Multi-tenant
+# ==========================================================
 class Client(Base):
     __tablename__ = "clients"
 
-    id = Column(Text, primary_key=True)
-    name = Column(Text, nullable=False)
-    plan = Column(Text, default="basic")
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    plan: Mapped[str] = mapped_column(Text, nullable=False, default="basic")
+    created_at: Mapped[object] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    agents: Mapped[list["Agent"]] = relationship("Agent", back_populates="client")
 
 
 class Agent(Base):
     __tablename__ = "agents"
 
-    id = Column(Text, primary_key=True)
-    client_id = Column(Text, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
-    name = Column(Text, nullable=False)
-    instance = Column(Text, nullable=False, unique=True)
-    evolution_base_url = Column(Text)
-    api_key = Column(Text)
-    status = Column(Text, default="pending")
-    last_seen_at = Column(TIMESTAMP(timezone=True))
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    client_id: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("clients.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
-    client = relationship("Client")
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    # instance do Evolution (precisa ser UNIQUE)
+    instance: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
 
-class Base(DeclarativeBase):
-    pass
+    evolution_base_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    last_seen_at: Mapped[Optional[object]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[object] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    client: Mapped["Client"] = relationship("Client", back_populates="agents")
+
+
+# ==========================================================
+# Leads
+# ==========================================================
 class Lead(Base):
     __tablename__ = "leads"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
 
-    client_id: Mapped[str] = mapped_column(Text, nullable=False, default="default")
-    instance: Mapped[str] = mapped_column(Text, nullable=False)
-    from_number: Mapped[str] = mapped_column(Text, nullable=False)
+    # Multi-tenant fields
+    client_id: Mapped[str] = mapped_column(Text, nullable=False, default="default", index=True)
+    agent_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
 
-    nome: Mapped[str | None] = mapped_column(Text, nullable=True)
-    telefone: Mapped[str | None] = mapped_column(Text, nullable=True)
-    assunto: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Legacy/compat + tracking
+    instance: Mapped[str] = mapped_column(Text, nullable=False)
+    from_number: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+
+    nome: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    telefone: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    assunto: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     status: Mapped[str] = mapped_column(Text, nullable=False, default="iniciado")
     origem: Mapped[str] = mapped_column(Text, nullable=False, default="primeiro_contato")
-    intent_detected: Mapped[str | None] = mapped_column(Text, nullable=True)
+    intent_detected: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    first_seen_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    first_seen_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    created_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
     lead_saved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Optional relationship (não obrigatório pro runtime funcionar)
+    agent: Mapped[Optional["Agent"]] = relationship(
+        "Agent",
+        primaryjoin="Lead.agent_id == Agent.id",
+        viewonly=True,
+    )
