@@ -270,7 +270,12 @@ async def webhook(req: Request):
     # 2) Intenção (lead quente)
     # ================================
     try:
-        ensure_first_contact(instance=instance, from_number=number)
+        ensure_first_contact(
+        client_id=client_id,
+        agent_id=agent_id,
+        instance=instance,
+        from_number=number
+    )
         LEAD_FIRST_CONTACT.inc()
 
         intents = detect_intents(text)
