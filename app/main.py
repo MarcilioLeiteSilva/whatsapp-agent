@@ -192,6 +192,17 @@ async def webhook(req: Request):
 
     instance, message_id, number, text, from_me, is_group, event, status = extract_payload(payload)
 
+    from .lead_logger import get_agent_by_instance
+
+    agent = get_agent_by_instance(instance)
+
+    if not agent:
+        logger.warning("UNKNOWN_INSTANCE: %s", instance)
+        return {"ok": True, "ignored": "unknown_instance"}
+
+    client_id = agent.client_id
+    agent_id = agent.id
+
     logger.info(
         "EXTRACTED: instance=%s id=%s number=%s text=%r from_me=%s group=%s event=%s status=%s",
         instance,
