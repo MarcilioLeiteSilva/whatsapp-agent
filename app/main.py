@@ -369,13 +369,15 @@ async def webhook(req: Request):
             telefone = (lead.get("telefone") or "").strip()
             assunto = (lead.get("assunto") or "").strip()
 
-            save_handoff_lead(
-                instance=instance,
-                from_number=number,
-                nome=nome,
-                telefone=telefone,
-                assunto=assunto,
-            )
+        save_handoff_lead(
+        client_id=client_id,
+        agent_id=agent_id,
+        instance=instance,
+        from_number=number,
+        nome=nome,
+        telefone=telefone,
+        assunto=assunto
+    )
 
             state["lead_saved"] = True
             LEAD_SAVED.inc()
