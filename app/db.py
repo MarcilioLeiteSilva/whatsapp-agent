@@ -1,6 +1,10 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
+from .models import Agent
+from .db import SessionLocal
+
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 if not DATABASE_URL:
@@ -14,3 +18,12 @@ engine = create_engine(
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def get_agent_by_instance(instance: str):
+    if not instance:
+        return None
+
+    with SessionLocal() as db:
+        return db.execute(
+            select(Agent).where(Agent.instance == instance)
+        ).scalar_one_or_none()
