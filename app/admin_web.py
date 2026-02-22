@@ -654,3 +654,136 @@ async def simulator_send(
         flash_message="Simulação enviada com sucesso.",
         extra_qs={"last_simulation": last},
     )
+
+
+@router.get("/chatlab", name="admin_web_chatlab")
+async def chatlab_page(req: Request):
+    try:
+        _require_admin(req)
+    except PermissionError:
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
+
+    flash = _flash_from_query(req)
+
+    with SessionLocal() as db:
+        agents = db.execute(select(Agent).order_by(desc(Agent.created_at))).scalars().all()
+        instances = [a.instance for a in agents if getattr(a, "instance", None)]
+
+    ctx = {
+        "request": req,
+        "active_nav": "chatlab",
+        "flash": flash,
+        "instances": instances,
+        "send_url": _url(req, "admin_web_chatlab_send"),
+    }
+    return templates.TemplateResponse("chatlab.html", ctx)
+
+
+@router.post("/chatlab/send", name="admin_web_chatlab_send")
+async def chatlab_send(req: Request):
+    """
+    Simula mensagem INBOUND para um agent instance e devolve o reply do bot
+    SEM enviar pra Evolution (ideal para testar rules.py).
+
+    Payload JSON:
+    {
+      "instance": "agente001",
+      "from_number": "5531999999999",
+      "text": "Oi"
+    }
+    """
+    try:
+        _require_admin(req)
+    except PermissionError:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+    try:
+        body = await req.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "bad_json"}, status_code=400)
+
+    instance = (body.get("instance") or "").strip()
+    from_number = (body.get("from_number") or "").strip()
+    text = (body.get("text") or "").strip()
+
+    if not instance or not from_number or not text:
+        return JSONResponse({"ok": False, "error": "missing_fields"}, status_code=400)
+
+    # Resolve agent por instance (mesma lógica do webhook)
+    agent = get_agent_by_instance(instance)
+    if not agent:
+        return JSONResponse({"ok": False, "error": "unknown_instance"}, status_code=404)
+
+    client_id = agent.client_id
+    agent_id = agent.id
+
+    logger.info(
+        "CHATLAB_CTX: client_id=%s agent_id=%s instance=%s from=%s text=%r",
+        client_id, agent_id, instance, from_number, text
+    )
+
+    # Captura automática (igual webhook, mas sem rate-limit/dedup)
+    try:
+        ensure_first_contact(
+            client_id=client_id,
+            agent_id=agent_id,
+            instance=instance,
+            from_number=from_number,
+        )
+
+        intents = detect_intents(text)
+        if intents:
+            mark_intent(
+                client_id=client_id,
+                agent_id=agent_id,
+                instance=instance,
+                from_number=from_number,
+                intents=intents,
+            )
+    except Exception as e:
+        logger.error("CHATLAB_LEAD_CAPTURE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
+
+    # Estado (memória curta) – store local do ChatLab
+    state = chatlab_store.get_state(from_number)
+
+    # Rodar regras
+    reply = reply_for(from_number, text, state)
+
+    logger.info(
+        "CHATLAB_RULES_REPLY: client_id=%s agent_id=%s instance=%s from=%s reply=%r step=%s",
+        client_id, agent_id, instance, from_number, reply, (state or {}).get("step")
+    )
+
+    # Se pausado (handoff)
+    if reply is None:
+        return JSONResponse({"ok": True, "paused": True, "reply": None, "state": state})
+
+    # Persistência lead (uma vez só) – igual ao webhook
+    try:
+        if (
+            state
+            and state.get("step") == "lead_captured"
+            and state.get("lead")
+            and not state.get("lead_saved")
+        ):
+            lead = state.get("lead") or {}
+            nome = (lead.get("nome") or "").strip()
+            telefone = (lead.get("telefone") or "").strip()
+            assunto = (lead.get("assunto") or "").strip()
+
+            save_handoff_lead(
+                client_id=client_id,
+                agent_id=agent_id,
+                instance=instance,
+                from_number=from_number,
+                nome=nome,
+                telefone=telefone,
+                assunto=assunto,
+            )
+
+            state["lead_saved"] = True
+            logger.info("CHATLAB_LEAD_SAVED: client_id=%s agent_id=%s instance=%s from=%s", client_id, agent_id, instance, from_number)
+    except Exception as e:
+        logger.error("CHATLAB_LEAD_SAVE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
+
+    return JSONResponse({"ok": True, "reply": reply, "paused": False, "state": state})
