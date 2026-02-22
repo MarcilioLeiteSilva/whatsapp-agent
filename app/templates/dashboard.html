@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="p-4 rounded bg-slate-900 border border-slate-800">
+      <div class="text-sm text-slate-400">Clients</div>
+      <div class="text-3xl font-semibold">{{ total_clients }}</div>
+    </div>
+    <div class="p-4 rounded bg-slate-900 border border-slate-800">
+      <div class="text-sm text-slate-400">Agents</div>
+      <div class="text-3xl font-semibold">{{ total_agents }}</div>
+    </div>
+    <div class="p-4 rounded bg-slate-900 border border-slate-800">
+      <div class="text-sm text-slate-400">Leads</div>
+      <div class="text-3xl font-semibold">{{ total_leads }}</div>
+    </div>
+  </div>
+
+  <div class="p-4 rounded bg-slate-900 border border-slate-800">
+    <div class="flex items-center justify-between mb-3">
+      <div class="text-lg font-semibold">Últimos Leads (20)</div>
+      <a href="/admin/leads" class="text-sm text-emerald-400 hover:underline">Ver todos</a>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="text-slate-300">
+          <tr class="border-b border-slate-800">
+            <th class="text-left py-2">Criado</th>
+            <th class="text-left py-2">Client</th>
+            <th class="text-left py-2">Agent</th>
+            <th class="text-left py-2">Instance</th>
+            <th class="text-left py-2">From</th>
+            <th class="text-left py-2">Nome</th>
+            <th class="text-left py-2">Telefone</th>
+            <th class="text-left py-2">Assunto</th>
+          </tr>
+        </thead>
+        <tbody class="text-slate-200">
+          {% for l in leads %}
+          <tr class="border-b border-slate-800">
+            <td class="py-2">{{ l.created_at }}</td>
+            <td class="py-2">{{ l.client_id }}</td>
+            <td class="py-2">{{ l.agent_id }}</td>
+            <td class="py-2">{{ l.instance }}</td>
+            <td class="py-2">{{ l.from_number }}</td>
+            <td class="py-2">{{ l.nome }}</td>
+            <td class="py-2">{{ l.telefone }}</td>
+            <td class="py-2">{{ l.assunto }}</td>
+          </tr>
+          {% endfor %}
+          {% if leads|length == 0 %}
+            <tr><td class="py-3 text-slate-400" colspan="8">Sem leads ainda.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}
