@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Simulator{% endblock %}
+
+{% block content %}
+  <div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Simulator</h1>
+      <p class="text-sm text-slate-600 mt-1">
+        Enviar eventos simulados (sem número real). O routing usa <span class="code">instance</span>.
+      </p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="card p-4">
+      <div class="text-sm font-semibold">Enviar mensagem simulada</div>
+      <div class="text-xs text-slate-500 mt-1">
+        O painel envia para o simulator, que encaminha para o webhook DEV.
+      </div>
+
+      <form class="mt-4 space-y-3" method="post" action="{{ simulate_action }}">
+        <div>
+          <div class="label">Instance</div>
+          <select class="input" name="instance" required>
+            {% for inst in instances %}
+              <option value="{{ inst }}">{{ inst }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <div class="label">from_number</div>
+          <input class="input" name="from_number" value="{{ default_from_number or '5531999999999' }}" />
+          <div class="text-xs text-slate-500 mt-1">Apenas para simular o contato.</div>
+        </div>
+
+        <div>
+          <div class="label">Mensagem</div>
+          <textarea class="input" name="text" rows="4" placeholder="Oi">{{ default_text or '' }}</textarea>
+        </div>
+
+        <button class="btn btn-primary w-full" type="submit">Simular</button>
+
+        <div class="text-xs text-slate-500">
+          Endpoint: <span class="code">{{ simulate_action }}</span>
+        </div>
+      </form>
+    </div>
+
+    <div class="card p-4 lg:col-span-2">
+      <div class="text-sm font-semibold">Como funciona</div>
+      <div class="text-xs text-slate-500 mt-1">
+        Fluxo de teste recomendado para multiagente (Opção B):
+      </div>
+
+      <ol class="mt-4 space-y-2 text-sm text-slate-700 list-decimal list-inside">
+        <li>Crie/garanta Agents em <a class="link" href="{{ url_for('admin_web_agents') }}">Agents</a> com instance.</li>
+        <li>Preencha <span class="code">evolution_base_url</span> e <span class="code">api_key</span> por agent (se precisar envio real).</li>
+        <li>Selecione a instance aqui e envie uma mensagem simulada.</li>
+        <li>Veja se o lead apareceu em <a class="link" href="{{ url_for('admin_web_leads') }}">Leads</a>.</li>
+      </ol>
+
+      <div class="mt-6 border border-slate-200 bg-slate-50 rounded-2xl p-4">
+        <div class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Observações</div>
+        <ul class="mt-2 text-sm text-slate-700 space-y-1 list-disc list-inside">
+          <li>Se <span class="code">ALLOW_SIMULATOR=false</span>, o /status mostra simulator desabilitado.</li>
+          <li>Mesmo com simulator, você testa routing e regras sem WhatsApp real.</li>
+          <li>Para testar envio real, cada agent precisa de base_url + api_key preenchidos.</li>
+        </ul>
+      </div>
+
+      {% if last_simulation %}
+        <div class="mt-6 border border-slate-200 rounded-2xl p-4 bg-white">
+          <div class="text-sm font-semibold">Última simulação</div>
+          <div class="mt-2 text-xs text-slate-600 break-words">
+            {{ last_simulation }}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}
