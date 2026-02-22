@@ -2,6 +2,8 @@
 app/admin_web.py
 
 Painel Admin Web (SSR) para DEV:
+- Login:     /admin/web/login
+- Logout:    /admin/web/logout
 - Dashboard: /admin/web
 - Clients:   /admin/web/clients
 - Agents:    /admin/web/agents
@@ -12,7 +14,7 @@ Compatível com schema Postgres atual:
 clients:
   id TEXT PK (sem default)
   name TEXT
-  plan TEXT
+  plan TEXT default 'basic'
 agents:
   id TEXT PK (sem default)
   client_id TEXT FK -> clients.id
@@ -21,23 +23,28 @@ agents:
   evolution_base_url TEXT nullable
   api_key TEXT nullable
   status TEXT default 'pending'
+  last_seen_at TIMESTAMPTZ
+  created_at TIMESTAMPTZ default now()
 leads:
-  id BIGINT
-  client_id TEXT NOT NULL (ex 'default')
+  id BIGINT PK
+  client_id TEXT NOT NULL
   agent_id TEXT nullable
-  instance TEXT
-  from_number TEXT
+  instance TEXT NOT NULL
+  from_number TEXT NOT NULL
   nome/telefone/assunto TEXT
+  status/origem/intent_detected...
   created_at TIMESTAMPTZ default now()
 
-Notas:
-- Painel roda no whatsapp-agent (DEV).
-- Simulator é serviço separado; aqui fazemos proxy HTTP quando ALLOW_SIMULATOR=true.
-- Proteção opcional por ADMIN_TOKEN:
-    - Header: X-ADMIN-TOKEN
-    - OU query param: ?token=...
-    - OU cookie: admin_token
-- Templates devem existir em app/templates/
+Auth:
+- ADMIN_USER (default: admin)
+- ADMIN_TOKEN (obrigatório recomendado)
+- Após login, grava cookie httponly: admin_token
+- Rotas protegidas redirecionam para /login se não autenticado.
+
+Simulator proxy:
+- ALLOW_SIMULATOR=true
+- SIMULATOR_BASE_URL=http://whatsapp-simulator:8000
+- Painel faz POST em {SIMULATOR_BASE_URL}/simulate/message
 """
 
 from __future__ import annotations
@@ -56,15 +63,17 @@ from starlette.templating import Jinja2Templates
 from sqlalchemy import select, func, or_, desc
 
 from .db import SessionLocal
-from .models import Client, Agent, Lead  # se seus nomes forem diferentes, ajuste aqui
+from .models import Client, Agent, Lead  # ajuste somente se seus nomes diferirem
 
 logger = logging.getLogger("agent")
 
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 router = APIRouter(prefix="/admin/web", tags=["admin_web"])
 
+# ENV
 ALLOW_SIMULATOR = os.getenv("ALLOW_SIMULATOR", "false").strip().lower() in ("1", "true", "yes", "y")
 SIMULATOR_BASE_URL = (os.getenv("SIMULATOR_BASE_URL", "http://whatsapp-simulator:8000") or "").strip().rstrip("/")
+
 ADMIN_USER = (os.getenv("ADMIN_USER", "admin") or "").strip()
 ADMIN_TOKEN = (os.getenv("ADMIN_TOKEN", "") or "").strip()
 
@@ -72,22 +81,8 @@ ADMIN_TOKEN = (os.getenv("ADMIN_TOKEN", "") or "").strip()
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
-def _require_admin(req: Request) -> None:
-    """
-    Exige login via cookie quando ADMIN_TOKEN está configurado.
-    Aceita também header/query (útil p/ primeira entrada e debug).
-    """
-    if not ADMIN_TOKEN:
-        return
-
-    got = (req.cookies.get("admin_token") or "").strip()
-    if not got:
-        got = (req.headers.get("X-ADMIN-TOKEN") or "").strip()
-    if not got:
-        got = (req.query_params.get("token") or "").strip()
-
-    if got != ADMIN_TOKEN:
-        raise PermissionError("unauthorized")
+def _url(req: Request, name: str, **path_params: Any) -> str:
+    return str(req.url_for(name, **path_params))
 
 
 def _flash_from_query(req: Request) -> Optional[dict]:
@@ -96,10 +91,6 @@ def _flash_from_query(req: Request) -> Optional[dict]:
     if not msg:
         return None
     return {"kind": kind or "info", "message": msg}
-
-
-def _url(req: Request, name: str, **path_params: Any) -> str:
-    return str(req.url_for(name, **path_params))
 
 
 def _redirect(
@@ -111,12 +102,18 @@ def _redirect(
     extra_qs: Optional[dict] = None,
 ) -> RedirectResponse:
     url = _url(req, to_name)
-    qp = {}
+    qp: dict[str, str] = {}
+
     if flash_message:
         qp["flash_kind"] = flash_kind
         qp["flash_message"] = flash_message
+
     if extra_qs:
-        qp.update(extra_qs)
+        # converte valores para str para QueryParams
+        for k, v in extra_qs.items():
+            if v is None:
+                continue
+            qp[str(k)] = str(v)
 
     if qp:
         q = str(httpx.QueryParams(qp))
@@ -126,14 +123,33 @@ def _redirect(
     return RedirectResponse(url, status_code=303)
 
 
+def _new_id(prefix: str) -> str:
+    # id TEXT sem default no Postgres -> precisamos gerar (evita erro NOT NULL)
+    return f"{prefix}_{secrets.token_hex(6)}"
+
+
 def _normalize_base_url(base_url: str) -> str:
     return (base_url or "").strip().rstrip("/")
 
 
-def _new_id(prefix: str) -> str:
-    # id TEXT sem default no Postgres -> precisamos gerar
-    # ex: c_4f1a2b3c9d
-    return f"{prefix}_{secrets.token_hex(6)}"
+def _require_admin(req: Request) -> None:
+    """
+    Auth cookie-first.
+    Aceita também header/query para debug/primeira entrada, mas o fluxo normal é cookie.
+    """
+    if not ADMIN_TOKEN:
+        # Se não houver ADMIN_TOKEN, não bloqueia (DEV local).
+        # Em EasyPanel, RECOMENDO setar ADMIN_TOKEN.
+        return
+
+    got = (req.cookies.get("admin_token") or "").strip()
+    if not got:
+        got = (req.headers.get("X-ADMIN-TOKEN") or "").strip()
+    if not got:
+        got = (req.query_params.get("token") or "").strip()
+
+    if got != ADMIN_TOKEN:
+        raise PermissionError("unauthorized")
 
 
 def _client_to_view(c: Client) -> dict:
@@ -180,11 +196,7 @@ def _lead_to_view(l: Lead, client_name: Optional[str] = None, agent_name: Option
 
 
 async def _status_check() -> dict:
-    """
-    Check simples semelhante ao /status (sem chamar endpoint interno).
-    - DB: conta leads
-    - Evolution: best effort (usa ENV ou primeiro agent com evolution_base_url)
-    """
+    # DB check
     db_ok = True
     db_err = None
     try:
@@ -194,11 +206,11 @@ async def _status_check() -> dict:
         db_ok = False
         db_err = str(e)
 
+    # Evolution reachability (best effort)
     evo_ok = True
     evo_err = None
     try:
         base = (os.getenv("EVOLUTION_BASE_URL", "") or "").strip().rstrip("/")
-
         if not base or not base.startswith(("http://", "https://")):
             with SessionLocal() as db:
                 a = db.execute(
@@ -231,7 +243,7 @@ async def _status_check() -> dict:
 
 
 # -----------------------------------------------------------------------------
-# Pages
+# Auth pages
 # -----------------------------------------------------------------------------
 @router.get("/login", name="admin_web_login")
 async def login_page(req: Request):
@@ -246,28 +258,22 @@ async def login_page(req: Request):
 
 
 @router.post("/login", name="admin_web_login_post")
-async def login_post(
-    req: Request,
-    username: str = Form(""),
-    token: str = Form(""),
-):
+async def login_post(req: Request, username: str = Form(""), token: str = Form("")):
     username = (username or "").strip()
     token = (token or "").strip()
 
-    # Se ADMIN_TOKEN não estiver configurado, libera login sem validação (DEV local),
-    # mas recomendo sempre setar ADMIN_TOKEN no EasyPanel.
     if ADMIN_TOKEN:
         if username != ADMIN_USER or token != ADMIN_TOKEN:
             return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Usuário ou token inválidos.")
 
     resp = _redirect(req, "admin_web_dashboard", flash_kind="success", flash_message="Login realizado.")
 
-    # cookie simples (sem sessão server-side)
+    # cookie simples
     resp.set_cookie(
         key="admin_token",
         value=ADMIN_TOKEN or token or "dev",
         httponly=True,
-        secure=True,      # como você usa https
+        secure=True,
         samesite="lax",
         max_age=60 * 60 * 12,  # 12h
     )
@@ -281,20 +287,17 @@ async def logout(req: Request):
     return resp
 
 
-
+# -----------------------------------------------------------------------------
+# Pages (protected)
+# -----------------------------------------------------------------------------
 @router.get("", name="admin_web_dashboard")
 async def dashboard(req: Request):
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(
-            req,
-            "admin_web_login",
-            flash_kind="error",
-            flash_message="Faça login para acessar.",
-    )
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
 
-  flash = _flash_from_query(req)
+    flash = _flash_from_query(req)
 
     with SessionLocal() as db:
         clients_count = db.execute(select(func.count()).select_from(Client)).scalar_one()
@@ -304,9 +307,8 @@ async def dashboard(req: Request):
 
         recent = db.execute(select(Lead).order_by(desc(Lead.created_at)).limit(10)).scalars().all()
 
-        # maps por TEXT id
-        client_ids = {getattr(l, "client_id", None) for l in recent if getattr(l, "client_id", None)}
-        agent_ids = {getattr(l, "agent_id", None) for l in recent if getattr(l, "agent_id", None)}
+        client_ids = {str(getattr(l, "client_id", "")) for l in recent if getattr(l, "client_id", None)}
+        agent_ids = {str(getattr(l, "agent_id", "")) for l in recent if getattr(l, "agent_id", None)}
 
         clients_map: dict[str, str] = {}
         if client_ids:
@@ -351,12 +353,7 @@ async def clients_page(req: Request):
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(
-            req,
-            "admin_web_login",
-            flash_kind="error",
-            flash_message="Faça login para acessar.",
-    )
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
 
     flash = _flash_from_query(req)
 
@@ -375,13 +372,10 @@ async def clients_page(req: Request):
 
 @router.post("/clients/create", name="admin_web_clients_create")
 async def clients_create(req: Request, name: str = Form(...), plan: str = Form("basic"), client_id: str = Form("")):
-    """
-    client_id opcional: se vazio, gera c_<hex>.
-    """
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(req, "admin_web_dashboard", flash_kind="error", flash_message="Unauthorized (token inválido)")
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
 
     name = (name or "").strip()
     plan = (plan or "").strip() or "basic"
@@ -417,12 +411,7 @@ async def agents_page(req: Request):
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(
-            req,
-            "admin_web_login",
-            flash_kind="error",
-            flash_message="Faça login para acessar.",
-    )
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
 
     flash = _flash_from_query(req)
 
@@ -455,13 +444,10 @@ async def agents_create(
     status: str = Form("active"),
     agent_id: str = Form(""),
 ):
-    """
-    agent_id opcional: se vazio, gera a_<hex>.
-    """
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(req, "admin_web_dashboard", flash_kind="error", flash_message="Unauthorized (token inválido)")
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
 
     client_id = (client_id or "").strip()
     instance = (instance or "").strip()
@@ -477,17 +463,14 @@ async def agents_create(
     agent_id = (agent_id or "").strip() or _new_id("a")
 
     with SessionLocal() as db:
-        # valida client existe (FK exige)
         c = db.execute(select(Client).where(Client.id == client_id)).scalar_one_or_none()
         if not c:
             return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Client inválido (não existe): {client_id}")
 
-        # valida agent id único
         exists_id = db.execute(select(Agent).where(Agent.id == agent_id)).scalar_one_or_none()
         if exists_id:
             return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Agent id já existe: {agent_id}")
 
-        # valida instance única
         exists_instance = db.execute(select(Agent).where(Agent.instance == instance)).scalar_one_or_none()
         if exists_instance:
             return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Instance já existe: {instance}")
@@ -522,12 +505,7 @@ async def leads_page(req: Request, q: str = ""):
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(
-            req,
-            "admin_web_login",
-            flash_kind="error",
-            flash_message="Faça login para acessar.",
-    )
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
 
     flash = _flash_from_query(req)
     q = (q or "").strip()
@@ -556,7 +534,6 @@ async def leads_page(req: Request, q: str = ""):
 
         leads = db.execute(stmt).scalars().all()
 
-        # joins por TEXT id (melhor esforço)
         client_ids = {str(getattr(l, "client_id", "")) for l in leads if getattr(l, "client_id", None)}
         agent_ids = {str(getattr(l, "agent_id", "")) for l in leads if getattr(l, "agent_id", None)}
 
@@ -594,12 +571,7 @@ async def simulator_page(req: Request):
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(
-            req,
-            "admin_web_login",
-            flash_kind="error",
-            flash_message="Faça login para acessar.",
-    )
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
 
     flash = _flash_from_query(req)
 
@@ -627,13 +599,10 @@ async def simulator_send(
     from_number: str = Form("5531999999999"),
     text: str = Form("Oi"),
 ):
-    """
-    Faz proxy para o whatsapp-simulator, que envia um evento fake para o webhook DEV.
-    """
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(req, "admin_web_dashboard", flash_kind="error", flash_message="Unauthorized (token inválido)")
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
 
     if not ALLOW_SIMULATOR:
         return _redirect(req, "admin_web_simulator", flash_kind="error", flash_message="Simulator desabilitado (ALLOW_SIMULATOR=false).")
