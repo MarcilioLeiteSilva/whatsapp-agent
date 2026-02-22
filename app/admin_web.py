@@ -351,7 +351,12 @@ async def clients_page(req: Request):
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(req, "admin_web_dashboard", flash_kind="error", flash_message="Unauthorized (token inválido)")
+    return _redirect(
+        req,
+        "admin_web_login",
+        flash_kind="error",
+        flash_message="Faça login para acessar.",
+    )
 
     flash = _flash_from_query(req)
 
@@ -412,7 +417,12 @@ async def agents_page(req: Request):
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(req, "admin_web_dashboard", flash_kind="error", flash_message="Unauthorized (token inválido)")
+    return _redirect(
+        req,
+        "admin_web_login",
+        flash_kind="error",
+        flash_message="Faça login para acessar.",
+    )
 
     flash = _flash_from_query(req)
 
@@ -512,7 +522,12 @@ async def leads_page(req: Request, q: str = ""):
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(req, "admin_web_dashboard", flash_kind="error", flash_message="Unauthorized (token inválido)")
+    return _redirect(
+        req,
+        "admin_web_login",
+        flash_kind="error",
+        flash_message="Faça login para acessar.",
+    )
 
     flash = _flash_from_query(req)
     q = (q or "").strip()
@@ -579,7 +594,12 @@ async def simulator_page(req: Request):
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(req, "admin_web_dashboard", flash_kind="error", flash_message="Unauthorized (token inválido)")
+    return _redirect(
+        req,
+        "admin_web_login",
+        flash_kind="error",
+        flash_message="Faça login para acessar.",
+    )
 
     flash = _flash_from_query(req)
 
