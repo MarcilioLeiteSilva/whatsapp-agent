@@ -68,6 +68,8 @@ evo = EvolutionClient()
 store = MemoryStore()
 rl = RateLimiter(max_events=10, window_seconds=12)
 
+app.include_router(admin_web_router)
+
 app.include_router(admin_router)
 if admin_bootstrap_router:
     app.include_router(admin_bootstrap_router)
