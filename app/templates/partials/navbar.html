@@ -23,6 +23,10 @@
            href="{{ url_for('admin_web_leads') }}">Leads</a>
         <a class="px-3 py-2 rounded-xl {% if current=='simulator' %}bg-slate-900 text-white{% else %}hover:bg-slate-100{% endif %}"
            href="{{ url_for('admin_web_simulator') }}">Simulator</a>
+
+        <span class="mx-2 text-slate-300">|</span>
+        <a class="px-3 py-2 rounded-xl hover:bg-slate-100"
+           href="{{ url_for('admin_web_logout') }}">Sair</a>
       </div>
     </div>
   </div>
