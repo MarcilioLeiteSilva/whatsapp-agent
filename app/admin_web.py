@@ -65,7 +65,7 @@ router = APIRouter(prefix="/admin/web", tags=["admin_web"])
 
 ALLOW_SIMULATOR = os.getenv("ALLOW_SIMULATOR", "false").strip().lower() in ("1", "true", "yes", "y")
 SIMULATOR_BASE_URL = (os.getenv("SIMULATOR_BASE_URL", "http://whatsapp-simulator:8000") or "").strip().rstrip("/")
-
+ADMIN_USER = (os.getenv("ADMIN_USER", "admin") or "").strip()
 ADMIN_TOKEN = (os.getenv("ADMIN_TOKEN", "") or "").strip()
 
 
@@ -73,14 +73,18 @@ ADMIN_TOKEN = (os.getenv("ADMIN_TOKEN", "") or "").strip()
 # Helpers
 # -----------------------------------------------------------------------------
 def _require_admin(req: Request) -> None:
+    """
+    Exige login via cookie quando ADMIN_TOKEN está configurado.
+    Aceita também header/query (útil p/ primeira entrada e debug).
+    """
     if not ADMIN_TOKEN:
         return
 
-    got = (req.headers.get("X-ADMIN-TOKEN") or "").strip()
+    got = (req.cookies.get("admin_token") or "").strip()
+    if not got:
+        got = (req.headers.get("X-ADMIN-TOKEN") or "").strip()
     if not got:
         got = (req.query_params.get("token") or "").strip()
-    if not got:
-        got = (req.cookies.get("admin_token") or "").strip()
 
     if got != ADMIN_TOKEN:
         raise PermissionError("unauthorized")
@@ -229,6 +233,55 @@ async def _status_check() -> dict:
 # -----------------------------------------------------------------------------
 # Pages
 # -----------------------------------------------------------------------------
+@router.get("/login", name="admin_web_login")
+async def login_page(req: Request):
+    flash = _flash_from_query(req)
+    ctx = {
+        "request": req,
+        "active_nav": "",
+        "flash": flash,
+        "login_action": _url(req, "admin_web_login_post"),
+    }
+    return templates.TemplateResponse("login.html", ctx)
+
+
+@router.post("/login", name="admin_web_login_post")
+async def login_post(
+    req: Request,
+    username: str = Form(""),
+    token: str = Form(""),
+):
+    username = (username or "").strip()
+    token = (token or "").strip()
+
+    # Se ADMIN_TOKEN não estiver configurado, libera login sem validação (DEV local),
+    # mas recomendo sempre setar ADMIN_TOKEN no EasyPanel.
+    if ADMIN_TOKEN:
+        if username != ADMIN_USER or token != ADMIN_TOKEN:
+            return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Usuário ou token inválidos.")
+
+    resp = _redirect(req, "admin_web_dashboard", flash_kind="success", flash_message="Login realizado.")
+
+    # cookie simples (sem sessão server-side)
+    resp.set_cookie(
+        key="admin_token",
+        value=ADMIN_TOKEN or token or "dev",
+        httponly=True,
+        secure=True,      # como você usa https
+        samesite="lax",
+        max_age=60 * 60 * 12,  # 12h
+    )
+    return resp
+
+
+@router.get("/logout", name="admin_web_logout")
+async def logout(req: Request):
+    resp = _redirect(req, "admin_web_login", flash_kind="success", flash_message="Você saiu do painel.")
+    resp.delete_cookie("admin_token")
+    return resp
+
+
+
 @router.get("", name="admin_web_dashboard")
 async def dashboard(req: Request):
     try:
