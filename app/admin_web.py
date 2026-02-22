@@ -287,9 +287,14 @@ async def dashboard(req: Request):
     try:
         _require_admin(req)
     except PermissionError:
-        return _redirect(req, "admin_web_dashboard", flash_kind="error", flash_message="Unauthorized (token inválido)")
+    return _redirect(
+        req,
+        "admin_web_login",
+        flash_kind="error",
+        flash_message="Faça login para acessar.",
+    )
 
-    flash = _flash_from_query(req)
+  flash = _flash_from_query(req)
 
     with SessionLocal() as db:
         clients_count = db.execute(select(func.count()).select_from(Client)).scalar_one()
