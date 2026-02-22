@@ -242,8 +242,12 @@ async def status():
     evo_ok = True
     evo_err = None
     try:
+        base = (getattr(evo, "base", "") or "").strip()
+        if not (base.startswith("http://") or base.startswith("https://")):
+            raise ValueError(f"EVOLUTION_BASE_URL inválida (sem protocolo): {base!r}")
+
         async with httpx.AsyncClient(timeout=5) as c:
-            r = await c.get(evo.base)
+            r = await c.get(base)
             _ = r.status_code
     except Exception as e:
         evo_ok = False
