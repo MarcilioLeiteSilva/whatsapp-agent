@@ -1,35 +1,44 @@
 <!doctype html>
 <html lang="pt-br">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>WhatsApp Agent DEV Admin</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-slate-950 text-slate-100">
-  <div class="max-w-7xl mx-auto px-4 py-6">
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <div class="text-xl font-semibold">WhatsApp Agent — DEV Admin</div>
-        <div class="text-xs text-slate-400">Agora: {{ now }}</div>
-      </div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{% block title %}Admin{% endblock %} · WhatsApp Agent</title>
 
-      <div class="flex gap-2 items-center">
-        <a class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-sm" href="/admin/dashboard">Dashboard</a>
-        <a class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-sm" href="/admin/clients">Clients</a>
-        <a class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-sm" href="/admin/agents">Agents</a>
-        <a class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-sm" href="/admin/leads">Leads</a>
-        <a class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-sm" href="/admin/simulator">Simulator</a>
+    <!-- Tailwind CDN (mínimo e rápido p/ DEV) -->
+    <script src="https://cdn.tailwindcss.com"></script>
 
-        {% if auth_required %}
-          <form action="/admin/logout" method="post">
-            <button class="px-3 py-2 rounded bg-red-800 hover:bg-red-700 text-sm">Sair</button>
-          </form>
-        {% endif %}
-      </div>
-    </div>
+    <style>
+      /* Pequenos ajustes visuais */
+      .card { @apply bg-white rounded-2xl shadow-sm border border-slate-200; }
+      .btn  { @apply inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-medium border border-slate-200 hover:bg-slate-50; }
+      .btn-primary { @apply bg-slate-900 text-white border-slate-900 hover:bg-slate-800; }
+      .input { @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-200; }
+      .label { @apply text-xs font-medium text-slate-600; }
+      .table { @apply w-full text-sm; }
+      .th { @apply text-left text-xs font-semibold text-slate-600 uppercase tracking-wide py-3 px-3 border-b border-slate-200; }
+      .td { @apply py-3 px-3 border-b border-slate-100 align-top; }
+      .badge { @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium border; }
+      .badge-ok { @apply border-emerald-200 bg-emerald-50 text-emerald-700; }
+      .badge-warn { @apply border-amber-200 bg-amber-50 text-amber-700; }
+      .badge-err { @apply border-rose-200 bg-rose-50 text-rose-700; }
+      .badge-muted { @apply border-slate-200 bg-slate-50 text-slate-700; }
+      .link { @apply text-slate-900 underline decoration-slate-300 underline-offset-2 hover:decoration-slate-900; }
+      .code { @apply font-mono text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1; }
+    </style>
 
-    {% block content %}{% endblock %}
-  </div>
-</body>
+    {% block head %}{% endblock %}
+  </head>
+
+  <body class="bg-slate-50 text-slate-900">
+    {% include "partials/navbar.html" %}
+
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {% include "partials/flash.html" %}
+
+      {% block content %}{% endblock %}
+    </main>
+
+    {% block scripts %}{% endblock %}
+  </body>
 </html>
