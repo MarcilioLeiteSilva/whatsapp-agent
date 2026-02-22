@@ -21,6 +21,8 @@
            href="{{ url_for('admin_web_agents') }}">Agents</a>
         <a class="px-3 py-2 rounded-xl {% if current=='leads' %}bg-slate-900 text-white{% else %}hover:bg-slate-100{% endif %}"
            href="{{ url_for('admin_web_leads') }}">Leads</a>
+        <a class="px-3 py-2 rounded-xl {% if current=='chatlab' %}bg-slate-900 text-white{% else %}hover:bg-slate-100{% endif %}"
+           href="{{ url_for('admin_web_chatlab') }}">Chat Lab</a>   
         <a class="px-3 py-2 rounded-xl {% if current=='simulator' %}bg-slate-900 text-white{% else %}hover:bg-slate-100{% endif %}"
            href="{{ url_for('admin_web_simulator') }}">Simulator</a>
 
