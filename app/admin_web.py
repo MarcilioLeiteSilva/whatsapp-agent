@@ -8,6 +8,8 @@ Painel Admin Web (SSR) para DEV:
 - Leads:     /admin/web/leads
 - Simulator: /admin/web/simulator
 
+Compatível com schema atual (leads.client_id TEXT, leads.agent_id TEXT).
+
 Notas:
 - Painel roda no whatsapp-agent (DEV).
 - Simulator é um serviço separado; aqui fazemos proxy HTTP quando ALLOW_SIMULATOR=true.
@@ -15,9 +17,7 @@ Notas:
     - Header: X-ADMIN-TOKEN
     - OU query param: ?token=...
     - OU cookie: admin_token
-
-Requisitos:
-- templates em app/templates/
+- Templates devem existir em app/templates/
 """
 
 from __future__ import annotations
@@ -33,8 +33,9 @@ from fastapi.responses import RedirectResponse
 from starlette.templating import Jinja2Templates
 
 from sqlalchemy import select, func, or_, desc
+
 from .db import SessionLocal
-from .models import Client, Agent, Lead  # ajuste se seu model de lead tiver outro nome/tabela
+from .models import Client, Agent, Lead  # Ajuste SOMENTE se seu arquivo models.py usar outros nomes
 
 logger = logging.getLogger("agent")
 
@@ -44,7 +45,7 @@ router = APIRouter(prefix="/admin/web", tags=["admin_web"])
 ALLOW_SIMULATOR = os.getenv("ALLOW_SIMULATOR", "false").strip().lower() in ("1", "true", "yes", "y")
 SIMULATOR_BASE_URL = (os.getenv("SIMULATOR_BASE_URL", "http://whatsapp-simulator:8000") or "").strip().rstrip("/")
 
-# Token opcional
+# Token opcional (recomendado em DEV público)
 ADMIN_TOKEN = (os.getenv("ADMIN_TOKEN", "") or "").strip()
 
 
@@ -83,54 +84,58 @@ def _url(req: Request, name: str, **path_params: Any) -> str:
     return str(req.url_for(name, **path_params))
 
 
-def _redirect(
-    req: Request,
-    to_name: str,
-    *,
-    flash_kind: Optional[str] = None,
-    flash_message: Optional[str] = None,
-    **path_params: Any,
-) -> RedirectResponse:
-    url = _url(req, to_name, **path_params)
+def _redirect(req: Request, to_name: str, *, flash_kind: str = "info", flash_message: str = "", extra_qs: Optional[dict] = None) -> RedirectResponse:
+    url = _url(req, to_name)
+    qp = {}
     if flash_message:
+        qp["flash_kind"] = flash_kind
+        qp["flash_message"] = flash_message
+    if extra_qs:
+        qp.update(extra_qs)
+
+    if qp:
+        q = str(httpx.QueryParams(qp))
         sep = "&" if "?" in url else "?"
-        url = f"{url}{sep}flash_kind={flash_kind or 'info'}&flash_message={httpx.QueryParams({'m': flash_message})['m']}"
-        # hack simples pra url-encode usando QueryParams
-        url = url.replace("m=", "flash_message=")
+        url = f"{url}{sep}{q}"
+
     return RedirectResponse(url, status_code=303)
 
 
-def _agent_to_view(a: Agent, client_name: Optional[str] = None) -> dict:
+def _normalize_base_url(base_url: str) -> str:
+    return (base_url or "").strip().rstrip("/")
+
+
+def _client_to_view(c: Client) -> dict:
+    # Não assumimos tipo do id; tratamos como str/Any
     return {
-        "id": a.id,
-        "client_id": a.client_id,
-        "client_name": client_name,
+        "id": getattr(c, "id", None),
+        "name": getattr(c, "name", None),
+        "plan": getattr(c, "plan", None),
+        "created_at": str(getattr(c, "created_at", "") or "") or None,
+    }
+
+
+def _agent_to_view(a: Agent) -> dict:
+    return {
+        "id": getattr(a, "id", None),
+        "client_id": getattr(a, "client_id", None),  # pode ser text ou int dependendo do schema
         "name": getattr(a, "name", None),
         "instance": getattr(a, "instance", None),
         "evolution_base_url": getattr(a, "evolution_base_url", None),
         "api_key": getattr(a, "api_key", None),
         "status": getattr(a, "status", None),
-        "last_seen_at": getattr(a, "last_seen_at", None),
-        "created_at": getattr(a, "created_at", None),
+        "last_seen_at": str(getattr(a, "last_seen_at", "") or "") or None,
+        "created_at": str(getattr(a, "created_at", "") or "") or None,
     }
 
 
-def _client_to_view(c: Client) -> dict:
+def _lead_to_view(l: Lead) -> dict:
+    # Compatível com seu schema:
+    # client_id (text), agent_id (text nullable), instance, from_number, nome, telefone, assunto...
     return {
-        "id": c.id,
-        "name": getattr(c, "name", None),
-        "plan": getattr(c, "plan", None),
-        "created_at": getattr(c, "created_at", None),
-    }
-
-
-def _lead_to_view(l: Lead, client_name: Optional[str] = None, agent_name: Optional[str] = None) -> dict:
-    return {
-        "id": l.id,
+        "id": getattr(l, "id", None),
         "client_id": getattr(l, "client_id", None),
-        "client_name": client_name,
         "agent_id": getattr(l, "agent_id", None),
-        "agent_name": agent_name,
         "instance": getattr(l, "instance", None),
         "from_number": getattr(l, "from_number", None),
         "nome": getattr(l, "nome", None),
@@ -139,13 +144,15 @@ def _lead_to_view(l: Lead, client_name: Optional[str] = None, agent_name: Option
         "status": getattr(l, "status", None),
         "origem": getattr(l, "origem", None),
         "intent_detected": getattr(l, "intent_detected", None),
-        "created_at": getattr(l, "created_at", None),
+        "created_at": str(getattr(l, "created_at", "") or "") or None,
     }
 
 
 async def _status_check() -> dict:
     """
     Check simples semelhante ao /status (sem chamar endpoint interno).
+    - DB: conta leads
+    - Evolution: best effort (usa ENV ou primeiro agent com evolution_base_url)
     """
     # DB check
     db_ok = True
@@ -161,14 +168,14 @@ async def _status_check() -> dict:
     evo_ok = True
     evo_err = None
     try:
-        # tenta ENV default (compat)
         base = (os.getenv("EVOLUTION_BASE_URL", "") or "").strip().rstrip("/")
+
         if not base or not base.startswith(("http://", "https://")):
-            # tenta do primeiro agent com base_url
             with SessionLocal() as db:
                 a = db.execute(
                     select(Agent)
                     .where(Agent.evolution_base_url.is_not(None))
+                    .order_by(desc(Agent.id))
                     .limit(1)
                 ).scalar_one_or_none()
             if a and (a.evolution_base_url or "").strip():
@@ -202,44 +209,20 @@ async def dashboard(req: Request):
     try:
         _require_admin(req)
     except PermissionError:
-        # Sem página de login: redireciona com aviso
         return _redirect(req, "admin_web_dashboard", flash_kind="error", flash_message="Unauthorized (token inválido)")
 
     flash = _flash_from_query(req)
 
     with SessionLocal() as db:
+        # Se suas tabelas clients/agents existirem e estiverem migradas, conta normalmente.
+        # Caso não exista, isso geraria erro. Em DEV você já tem essas tabelas.
         clients_count = db.execute(select(func.count()).select_from(Client)).scalar_one()
         agents_count = db.execute(select(func.count()).select_from(Agent)).scalar_one()
         leads_count = db.execute(select(func.count()).select_from(Lead)).scalar_one()
-
         last_lead_at = db.execute(select(func.max(Lead.created_at))).scalar_one()
 
-        # últimos leads (join manual leve)
-        recent = db.execute(
-            select(Lead)
-            .order_by(desc(Lead.created_at))
-            .limit(10)
-        ).scalars().all()
-
-        # map client/agent names
-        client_ids = {getattr(l, "client_id", None) for l in recent if getattr(l, "client_id", None)}
-        agent_ids = {getattr(l, "agent_id", None) for l in recent if getattr(l, "agent_id", None)}
-
-        clients_map = {}
-        if client_ids:
-            for c in db.execute(select(Client).where(Client.id.in_(client_ids))).scalars().all():
-                clients_map[c.id] = getattr(c, "name", None)
-
-        agents_map = {}
-        if agent_ids:
-            for a in db.execute(select(Agent).where(Agent.id.in_(agent_ids))).scalars().all():
-                agents_map[a.id] = getattr(a, "name", None)
-
-        recent_leads = [
-            _lead_to_view(l, client_name=clients_map.get(getattr(l, "client_id", None)),
-                          agent_name=agents_map.get(getattr(l, "agent_id", None)))
-            for l in recent
-        ]
+        recent = db.execute(select(Lead).order_by(desc(Lead.created_at)).limit(10)).scalars().all()
+        recent_leads = [_lead_to_view(l) for l in recent]
 
     status = await _status_check()
 
@@ -304,7 +287,7 @@ async def clients_create(req: Request, name: str = Form(...), plan: str = Form("
         db.commit()
         db.refresh(c)
 
-        logger.info("ADMIN_WEB_CLIENT_CREATED: client_id=%s name=%s plan=%s", c.id, name, plan)
+        logger.info("ADMIN_WEB_CLIENT_CREATED: client_id=%s name=%s plan=%s", getattr(c, "id", None), name, plan)
 
     return _redirect(req, "admin_web_clients", flash_kind="success", flash_message=f"Client criado: {name}")
 
@@ -319,18 +302,17 @@ async def agents_page(req: Request):
     flash = _flash_from_query(req)
 
     with SessionLocal() as db:
+        # Clients no painel: se seu schema estiver com client_id text no Agent,
+        # a criação pode ser "livre". Ainda assim listamos clients para facilitar.
         clients = db.execute(select(Client).order_by(desc(Client.id))).scalars().all()
         agents = db.execute(select(Agent).order_by(desc(Agent.id))).scalars().all()
-
-        clients_map = {c.id: getattr(c, "name", None) for c in clients}
-        agents_view = [_agent_to_view(a, client_name=clients_map.get(a.client_id)) for a in agents]
 
     ctx = {
         "request": req,
         "active_nav": "agents",
         "flash": flash,
         "clients": [_client_to_view(c) for c in clients],
-        "agents": agents_view,
+        "agents": [_agent_to_view(a) for a in agents],
         "create_agent_action": _url(req, "admin_web_agents_create"),
     }
     return templates.TemplateResponse("agents.html", ctx)
@@ -339,7 +321,7 @@ async def agents_page(req: Request):
 @router.post("/agents/create", name="admin_web_agents_create")
 async def agents_create(
     req: Request,
-    client_id: int = Form(...),
+    client_id: str = Form(...),  # <-- TEXT (compat com seu schema de leads e possível schema de agents)
     name: str = Form(""),
     instance: str = Form(...),
     evolution_base_url: str = Form(""),
@@ -351,23 +333,29 @@ async def agents_create(
     except PermissionError:
         return _redirect(req, "admin_web_dashboard", flash_kind="error", flash_message="Unauthorized (token inválido)")
 
+    client_id = (client_id or "").strip()
     instance = (instance or "").strip()
+    if not client_id:
+        return _redirect(req, "admin_web_agents", flash_kind="error", flash_message="client_id é obrigatório.")
     if not instance:
-        return _redirect(req, "admin_web_agents", flash_kind="error", flash_message="Instance é obrigatória.")
+        return _redirect(req, "admin_web_agents", flash_kind="error", flash_message="instance é obrigatória.")
 
     name = (name or "").strip() or instance
-    evolution_base_url = (evolution_base_url or "").strip().rstrip("/")
+    evolution_base_url = _normalize_base_url(evolution_base_url)
     api_key = (api_key or "").strip()
     status = (status or "active").strip()
 
     with SessionLocal() as db:
-        c = db.execute(select(Client).where(Client.id == client_id)).scalar_one_or_none()
-        if not c:
-            return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Client inválido: {client_id}")
-
+        # valida instance única
         exists = db.execute(select(Agent).where(Agent.instance == instance)).scalar_one_or_none()
         if exists:
             return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Instance já existe: {instance}")
+
+        # valida client (se existir tabela clients e for coerente)
+        # Aqui aceitamos client_id livre, mas tentamos alertar se não existir.
+        c = db.execute(select(Client).where(or_(Client.name == client_id, Client.id == client_id))).scalar_one_or_none()
+        if not c:
+            logger.warning("ADMIN_WEB_AGENT_CREATE_WARN: client_not_found client_id=%s instance=%s", client_id, instance)
 
         a = Agent(
             client_id=client_id,
@@ -383,11 +371,11 @@ async def agents_create(
 
         logger.info(
             "ADMIN_WEB_AGENT_CREATED: client_id=%s agent_id=%s instance=%s base_url_set=%s api_key_set=%s",
-            a.client_id,
-            a.id,
-            a.instance,
-            bool((a.evolution_base_url or "").strip()),
-            bool((a.api_key or "").strip()),
+            getattr(a, "client_id", None),
+            getattr(a, "id", None),
+            getattr(a, "instance", None),
+            bool((getattr(a, "evolution_base_url", "") or "").strip()),
+            bool((getattr(a, "api_key", "") or "").strip()),
         )
 
     return _redirect(req, "admin_web_agents", flash_kind="success", flash_message=f"Agent criado: {instance}")
@@ -417,6 +405,8 @@ async def leads_page(req: Request, q: str = ""):
                         Lead.telefone.ilike(like),
                         Lead.assunto.ilike(like),
                         Lead.instance.ilike(like),
+                        Lead.client_id.ilike(like),
+                        Lead.agent_id.ilike(like),
                     )
                 )
                 .order_by(desc(Lead.created_at))
@@ -425,31 +415,12 @@ async def leads_page(req: Request, q: str = ""):
 
         leads = db.execute(stmt).scalars().all()
 
-        client_ids = {getattr(l, "client_id", None) for l in leads if getattr(l, "client_id", None)}
-        agent_ids = {getattr(l, "agent_id", None) for l in leads if getattr(l, "agent_id", None)}
-
-        clients_map = {}
-        if client_ids:
-            for c in db.execute(select(Client).where(Client.id.in_(client_ids))).scalars().all():
-                clients_map[c.id] = getattr(c, "name", None)
-
-        agents_map = {}
-        if agent_ids:
-            for a in db.execute(select(Agent).where(Agent.id.in_(agent_ids))).scalars().all():
-                agents_map[a.id] = getattr(a, "name", None)
-
-        leads_view = [
-            _lead_to_view(l, client_name=clients_map.get(getattr(l, "client_id", None)),
-                          agent_name=agents_map.get(getattr(l, "agent_id", None)))
-            for l in leads
-        ]
-
     ctx = {
         "request": req,
         "active_nav": "leads",
         "flash": flash,
         "q": q,
-        "leads": leads_view,
+        "leads": [_lead_to_view(l) for l in leads],
     }
     return templates.TemplateResponse("leads.html", ctx)
 
@@ -465,7 +436,7 @@ async def simulator_page(req: Request):
 
     with SessionLocal() as db:
         agents = db.execute(select(Agent).order_by(desc(Agent.id))).scalars().all()
-        instances = [a.instance for a in agents if getattr(a, "instance", None)]
+        instances = [getattr(a, "instance", None) for a in agents if getattr(a, "instance", None)]
 
     ctx = {
         "request": req,
@@ -515,25 +486,26 @@ async def simulator_send(
             r.raise_for_status()
             data = r.json()
     except Exception as e:
-        logger.error("SIMULATOR_PROXY_ERROR: instance=%s err=%s", instance, e)
+        logger.error("SIMULATOR_PROXY_ERROR: instance=%s err=%s simulator_base=%s", instance, e, SIMULATOR_BASE_URL)
         return _redirect(req, "admin_web_simulator", flash_kind="error", flash_message=f"Falha ao chamar simulator: {e}")
 
     elapsed = round((time.time() - t0) * 1000)
 
     logger.info(
-        "SIMULATED_MESSAGE_SENT: instance=%s from=%s ms=%s simulator_base=%s",
+        "SIMULATED_MESSAGE_SENT: instance=%s from=%s ms=%s simulator_base=%s resp_type=%s",
         instance,
         from_number,
         elapsed,
         SIMULATOR_BASE_URL,
+        type(data).__name__,
     )
 
-    # Devolve para página com um resumo (não explode url com JSON grande)
     last = f"OK instance={instance} from={from_number} ms={elapsed} resp_keys={list(data.keys()) if isinstance(data, dict) else 'n/a'}"
+
     return _redirect(
         req,
         "admin_web_simulator",
         flash_kind="success",
         flash_message="Simulação enviada com sucesso.",
-        last_simulation=last,  # path param não existe; vai cair como extra e ignorar. Mantemos via query abaixo:
+        extra_qs={"last_simulation": last},
     )
