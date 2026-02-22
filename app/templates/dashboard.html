@@ -1,58 +1,180 @@
 {% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
 {% block content %}
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-    <div class="p-4 rounded bg-slate-900 border border-slate-800">
-      <div class="text-sm text-slate-400">Clients</div>
-      <div class="text-3xl font-semibold">{{ total_clients }}</div>
+  <div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Dashboard</h1>
+      <p class="text-sm text-slate-600 mt-1">
+        Visão geral do ambiente DEV (clients, agents, leads, status).
+      </p>
     </div>
-    <div class="p-4 rounded bg-slate-900 border border-slate-800">
-      <div class="text-sm text-slate-400">Agents</div>
-      <div class="text-3xl font-semibold">{{ total_agents }}</div>
-    </div>
-    <div class="p-4 rounded bg-slate-900 border border-slate-800">
-      <div class="text-sm text-slate-400">Leads</div>
-      <div class="text-3xl font-semibold">{{ total_leads }}</div>
+
+    <div class="flex items-center gap-2">
+      <a class="btn" href="{{ url_for('admin_web_dashboard') }}">Atualizar</a>
+      <a class="btn btn-primary" href="{{ url_for('admin_web_simulator') }}">Abrir Simulator</a>
     </div>
   </div>
 
-  <div class="p-4 rounded bg-slate-900 border border-slate-800">
-    <div class="flex items-center justify-between mb-3">
-      <div class="text-lg font-semibold">Últimos Leads (20)</div>
-      <a href="/admin/leads" class="text-sm text-emerald-400 hover:underline">Ver todos</a>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="card p-4">
+      <div class="text-xs text-slate-500">Clients</div>
+      <div class="text-2xl font-semibold mt-1">{{ stats.clients_count or 0 }}</div>
+      <div class="text-xs text-slate-500 mt-2">Total cadastrados</div>
     </div>
 
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead class="text-slate-300">
-          <tr class="border-b border-slate-800">
-            <th class="text-left py-2">Criado</th>
-            <th class="text-left py-2">Client</th>
-            <th class="text-left py-2">Agent</th>
-            <th class="text-left py-2">Instance</th>
-            <th class="text-left py-2">From</th>
-            <th class="text-left py-2">Nome</th>
-            <th class="text-left py-2">Telefone</th>
-            <th class="text-left py-2">Assunto</th>
-          </tr>
-        </thead>
-        <tbody class="text-slate-200">
-          {% for l in leads %}
-          <tr class="border-b border-slate-800">
-            <td class="py-2">{{ l.created_at }}</td>
-            <td class="py-2">{{ l.client_id }}</td>
-            <td class="py-2">{{ l.agent_id }}</td>
-            <td class="py-2">{{ l.instance }}</td>
-            <td class="py-2">{{ l.from_number }}</td>
-            <td class="py-2">{{ l.nome }}</td>
-            <td class="py-2">{{ l.telefone }}</td>
-            <td class="py-2">{{ l.assunto }}</td>
-          </tr>
-          {% endfor %}
-          {% if leads|length == 0 %}
-            <tr><td class="py-3 text-slate-400" colspan="8">Sem leads ainda.</td></tr>
+    <div class="card p-4">
+      <div class="text-xs text-slate-500">Agents</div>
+      <div class="text-2xl font-semibold mt-1">{{ stats.agents_count or 0 }}</div>
+      <div class="text-xs text-slate-500 mt-2">Total cadastrados</div>
+    </div>
+
+    <div class="card p-4">
+      <div class="text-xs text-slate-500">Leads</div>
+      <div class="text-2xl font-semibold mt-1">{{ stats.leads_count or 0 }}</div>
+      <div class="text-xs text-slate-500 mt-2">Total capturados</div>
+    </div>
+
+    <div class="card p-4">
+      <div class="text-xs text-slate-500">Último lead</div>
+      <div class="text-sm font-semibold mt-2">
+        {% if stats.last_lead_at %}
+          {{ stats.last_lead_at }}
+        {% else %}
+          <span class="text-slate-500">—</span>
+        {% endif %}
+      </div>
+      <div class="text-xs text-slate-500 mt-2">created_at</div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="card p-4 lg:col-span-2">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-sm font-semibold">Status</div>
+          <div class="text-xs text-slate-500 mt-0.5">Checagens rápidas (DB / Evolution / Simulator)</div>
+        </div>
+
+        {% if status and status.ok %}
+          <span class="badge badge-ok">OK</span>
+        {% else %}
+          <span class="badge badge-err">Com falhas</span>
+        {% endif %}
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="border border-slate-200 rounded-2xl p-3 bg-slate-50">
+          <div class="text-xs text-slate-500">DB</div>
+          {% if status and status.db_ok %}
+            <div class="mt-1"><span class="badge badge-ok">OK</span></div>
+          {% else %}
+            <div class="mt-1"><span class="badge badge-err">ERRO</span></div>
+            <div class="text-xs text-slate-600 mt-2 break-words">{{ status.db_err }}</div>
           {% endif %}
-        </tbody>
-      </table>
+        </div>
+
+        <div class="border border-slate-200 rounded-2xl p-3 bg-slate-50">
+          <div class="text-xs text-slate-500">Evolution</div>
+          {% if status and status.evolution_ok %}
+            <div class="mt-1"><span class="badge badge-ok">OK</span></div>
+          {% else %}
+            <div class="mt-1"><span class="badge badge-err">ERRO</span></div>
+            <div class="text-xs text-slate-600 mt-2 break-words">{{ status.evolution_err }}</div>
+          {% endif %}
+        </div>
+
+        <div class="border border-slate-200 rounded-2xl p-3 bg-slate-50">
+          <div class="text-xs text-slate-500">Simulator</div>
+          {% if status and status.allow_simulator %}
+            <div class="mt-1"><span class="badge badge-ok">Habilitado</span></div>
+          {% else %}
+            <div class="mt-1"><span class="badge badge-warn">Desabilitado</span></div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="mt-4 text-xs text-slate-500">
+        Endpoint base: <span class="code">{{ status_url or "/status" }}</span>
+      </div>
+    </div>
+
+    <div class="card p-4">
+      <div class="text-sm font-semibold">Ações rápidas</div>
+      <div class="text-xs text-slate-500 mt-1">Atalhos úteis para DEV</div>
+
+      <div class="mt-4 flex flex-col gap-2">
+        <a class="btn" href="{{ url_for('admin_web_agents') }}">Gerenciar Agents</a>
+        <a class="btn" href="{{ url_for('admin_web_clients') }}">Gerenciar Clients</a>
+        <a class="btn" href="{{ url_for('admin_web_leads') }}">Ver Leads</a>
+        <a class="btn btn-primary" href="{{ url_for('admin_web_simulator') }}">Testar Mensagem</a>
+      </div>
+
+      <div class="mt-5 text-xs text-slate-500">
+        Dica: crie um agent com <span class="code">instance</span> e teste via Simulator selecionando essa instance.
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-6 card p-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="text-sm font-semibold">Últimos Leads</div>
+        <div class="text-xs text-slate-500 mt-0.5">Últimos registros capturados (resumo)</div>
+      </div>
+      <a class="btn" href="{{ url_for('admin_web_leads') }}">Ver tudo</a>
+    </div>
+
+    <div class="mt-4 overflow-x-auto">
+      {% if recent_leads and recent_leads|length > 0 %}
+        <table class="table">
+          <thead>
+            <tr>
+              <th class="th">Created</th>
+              <th class="th">Client</th>
+              <th class="th">Agent</th>
+              <th class="th">From</th>
+              <th class="th">Nome</th>
+              <th class="th">Telefone</th>
+              <th class="th">Assunto</th>
+              <th class="th">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for l in recent_leads %}
+              <tr>
+                <td class="td text-slate-600">{{ l.created_at or "—" }}</td>
+                <td class="td">
+                  <div class="font-medium">{{ l.client_name or l.client_id or "—" }}</div>
+                  <div class="text-xs text-slate-500">client_id={{ l.client_id }}</div>
+                </td>
+                <td class="td">
+                  <div class="font-medium">{{ l.agent_name or l.agent_id or "—" }}</div>
+                  <div class="text-xs text-slate-500">instance={{ l.instance }}</div>
+                </td>
+                <td class="td font-mono text-xs">{{ l.from_number or "—" }}</td>
+                <td class="td">{{ l.nome or "—" }}</td>
+                <td class="td">{{ l.telefone or "—" }}</td>
+                <td class="td">{{ l.assunto or "—" }}</td>
+                <td class="td">
+                  {% set st = (l.status or "").lower() %}
+                  {% if st in ["new","open","lead"] %}
+                    <span class="badge badge-ok">{{ l.status }}</span>
+                  {% elif st in ["handoff","paused","waiting"] %}
+                    <span class="badge badge-warn">{{ l.status }}</span>
+                  {% elif st %}
+                    <span class="badge badge-muted">{{ l.status }}</span>
+                  {% else %}
+                    <span class="badge badge-muted">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        {% include "partials/empty.html" with context %}
+      {% endif %}
     </div>
   </div>
 {% endblock %}
