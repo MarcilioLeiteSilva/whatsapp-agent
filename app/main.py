@@ -8,7 +8,7 @@ import logging
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
-
+from .db_init import init_db_if_dev
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from .admin_bootstrap import router as admin_bootstrap_router
 from .evolution import EvolutionClient
@@ -110,8 +110,13 @@ def _convert_simulator_to_evolution(payload: dict) -> dict:
 # App & singletons
 # -----------------------------------------------------------------------------
 app = FastAPI()
+
+@app.on_event("startup")
+async def on_startup():
+    init_db_if_dev()
 evo = EvolutionClient()
 store = MemoryStore()
+
 rl = RateLimiter(max_events=10, window_seconds=12)
 
 app.include_router(admin_router)
