@@ -292,7 +292,7 @@ async def dashboard(req: Request):
             "admin_web_login",
             flash_kind="error",
             flash_message="Faça login para acessar.",
-        )
+    )
 
   flash = _flash_from_query(req)
 
@@ -356,7 +356,7 @@ async def clients_page(req: Request):
             "admin_web_login",
             flash_kind="error",
             flash_message="Faça login para acessar.",
-        )
+    )
 
     flash = _flash_from_query(req)
 
@@ -422,7 +422,7 @@ async def agents_page(req: Request):
             "admin_web_login",
             flash_kind="error",
             flash_message="Faça login para acessar.",
-        )
+    )
 
     flash = _flash_from_query(req)
 
@@ -527,7 +527,7 @@ async def leads_page(req: Request, q: str = ""):
             "admin_web_login",
             flash_kind="error",
             flash_message="Faça login para acessar.",
-        )
+    )
 
     flash = _flash_from_query(req)
     q = (q or "").strip()
@@ -599,7 +599,7 @@ async def simulator_page(req: Request):
             "admin_web_login",
             flash_kind="error",
             flash_message="Faça login para acessar.",
-        )
+    )
 
     flash = _flash_from_query(req)
 
