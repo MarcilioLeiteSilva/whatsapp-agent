@@ -1,14 +1,16 @@
-"""
-app/db.py
-
-Responsabilidade ÚNICA deste módulo:
-- configurar conexão com o banco (engine)
-- expor SessionLocal (sessionmaker)
-
-⚠️ Regra de ouro:
-- db.py NÃO deve importar módulos do app (models, lead_logger, etc.)
-  para evitar import circular.
-"""
+# -----------------------------------------------------------------------------
+#  """
+# app/db.py
+#
+#  Responsabilidade ÚNICA deste módulo:
+#  - configurar conexão com o banco (engine)
+#  - expor SessionLocal (sessionmaker)
+#
+#  ⚠️ Regra de ouro:
+#  - db.py NÃO deve importar módulos do app (models, lead_logger, etc.)
+#  para evitar import circular.
+#  """
+# -----------------------------------------------------------------------------
 
 import os
 from sqlalchemy import create_engine
