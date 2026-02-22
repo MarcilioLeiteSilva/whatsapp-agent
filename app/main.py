@@ -10,7 +10,7 @@ from .admin_web import router as admin_web_router
 app.include_router(admin_web_router)
 
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-
+from .models import Client, Agent, Lead
 from .evolution import EvolutionClient
 from .store import MemoryStore
 from .rules import reply_for, detect_intents
