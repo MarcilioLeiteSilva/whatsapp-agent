@@ -82,6 +82,8 @@ SIMULATOR_BASE_URL = (os.getenv("SIMULATOR_BASE_URL", "http://whatsapp-simulator
 ADMIN_USER = (os.getenv("ADMIN_USER", "admin") or "").strip()
 ADMIN_TOKEN = (os.getenv("ADMIN_TOKEN", "") or "").strip()
 
+chatlab_store = MemoryStore()
+
 
 # -----------------------------------------------------------------------------
 # Helpers
