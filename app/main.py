@@ -5,7 +5,7 @@ import logging
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
-
+from .admin_web import router as admin_web_router
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from .evolution import EvolutionClient
