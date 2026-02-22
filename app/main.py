@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-
+from .admin_bootstrap import router as admin_bootstrap_router
 from .evolution import EvolutionClient
 from .store import MemoryStore
 from .rules import reply_for, detect_intents
@@ -115,7 +115,7 @@ store = MemoryStore()
 rl = RateLimiter(max_events=10, window_seconds=12)
 
 app.include_router(admin_router)
-
+app.include_router(admin_bootstrap_router)
 
 # -----------------------------------------------------------------------------
 # Helpers: parsing / normalization (Evolution payload)
