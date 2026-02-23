@@ -1,0 +1,51 @@
+{% extends "portal_base.html" %}
+{% block title %}Agentes • Portal{% endblock %}
+
+{% block content %}
+  <div>
+    <h1 class="text-2xl font-bold">Agentes</h1>
+    <p class="text-sm text-slate-600">Seus agentes cadastrados.</p>
+  </div>
+
+  <div class="mt-6 bg-white rounded-2xl shadow-soft p-5 overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead class="text-slate-500">
+        <tr class="border-b">
+          <th class="text-left py-3 pr-4 font-semibold">Nome</th>
+          <th class="text-left py-3 pr-4 font-semibold">Instance</th>
+          <th class="text-left py-3 pr-4 font-semibold">Status</th>
+          <th class="text-left py-3 pr-4 font-semibold">Ação</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for a in agents %}
+          <tr>
+            <td class="py-3 pr-4">
+              <div class="font-semibold">{{ a.name }}</div>
+              <div class="text-xs text-slate-500 font-mono">{{ a.id }}</div>
+            </td>
+            <td class="py-3 pr-4 font-mono text-xs">{{ a.instance }}</td>
+            <td class="py-3 pr-4">
+              {% if a.status == "active" %}
+                <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">● active</span>
+              {% elif a.status == "pending" %}
+                <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">● pending</span>
+              {% else %}
+                <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">● {{ a.status }}</span>
+              {% endif %}
+            </td>
+            <td class="py-3 pr-4">
+              <a href="{{ url_for('portal_leads') }}?agent_id={{ a.id }}"
+                 class="inline-flex items-center h-9 px-3 rounded-xl bg-white border border-slate-200 text-slate-900 text-xs font-semibold hover:bg-slate-50">
+                Ver leads
+              </a>
+            </td>
+          </tr>
+        {% endfor %}
+        {% if not agents %}
+          <tr><td colspan="4" class="py-8 text-center text-slate-500">Nenhum agente cadastrado.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
