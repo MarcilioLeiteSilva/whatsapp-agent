@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import Column
 from typing import Optional
