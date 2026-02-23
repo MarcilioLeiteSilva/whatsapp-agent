@@ -114,7 +114,20 @@
     </template>
 
     <script>
-      const sendUrl = "{{ send_url }}";
+
+      
+      let sendUrl = "{{ send_url }}";
+
+      // força same-origin (resolve http/https e host diferente gerado pelo url_for atrás do proxy)
+      try {
+        const u = new URL(sendUrl, window.location.href);
+        if (u.origin !== window.location.origin) {
+          sendUrl = u.pathname + u.search; // usa só o path no mesmo domínio
+        }
+      } catch (e) {
+      // se por algum motivo não for URL válida, mantém como está
+      }
+           
       const MAX_PHONES = 6;
 
       const grid = document.getElementById("phonesGrid");
