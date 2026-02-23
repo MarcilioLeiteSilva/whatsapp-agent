@@ -15,11 +15,18 @@ Painel Admin Web (SSR) para DEV:
     - POST /admin/web/agents/{agent_id}/rules/save
     - POST /admin/web/agents/{agent_id}/rules/reset
 
++ NOVO (Portal do Cliente):
+- Geração de token por client:
+    - POST /admin/web/clients/{client_id}/token
+
 Compatível com schema Postgres atual:
 clients:
   id TEXT PK (sem default)
   name TEXT
   plan TEXT default 'basic'
+  login_token TEXT nullable (se você migrou)
+  login_token_created_at TIMESTAMPTZ nullable (se você migrou)
+  login_token_last_used_at TIMESTAMPTZ nullable (se você migrou)
 agents:
   id TEXT PK (sem default)
   client_id TEXT FK -> clients.id
@@ -61,6 +68,8 @@ import time
 import secrets
 import logging
 import json
+import string
+import random
 from typing import Any, Optional
 
 import httpx
@@ -173,12 +182,19 @@ def _require_admin(req: Request) -> None:
         raise PermissionError("unauthorized")
 
 
+def _gen_client_token(n: int = 6) -> str:
+    # 6 dígitos alfanumérico upper/lower (a-zA-Z0-9)
+    alphabet = string.ascii_letters + string.digits
+    return "".join(random.choice(alphabet) for _ in range(n))
+
+
 def _client_to_view(c: Client) -> dict:
     return {
         "id": getattr(c, "id", None),
         "name": getattr(c, "name", None),
         "plan": getattr(c, "plan", None),
         "created_at": str(getattr(c, "created_at", "") or "") or None,
+        "login_token": getattr(c, "login_token", None),
     }
 
 
@@ -425,6 +441,55 @@ async def clients_create(req: Request, name: str = Form(...), plan: str = Form("
         logger.info("ADMIN_WEB_CLIENT_CREATED: client_id=%s name=%s plan=%s", c.id, name, plan)
 
     return _redirect(req, "admin_web_clients", flash_kind="success", flash_message=f"Client criado: {name} (id={client_id})")
+
+
+@router.post("/clients/{client_id}/token", name="admin_web_clients_token")
+async def clients_generate_token(req: Request, client_id: str):
+    """
+    Gera token (6 chars alfanum upper/lower) para login do CLIENTE no Portal.
+    Guarda em clients.login_token.
+    """
+    try:
+        _require_admin(req)
+    except PermissionError:
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
+
+    client_id = (client_id or "").strip()
+    if not client_id:
+        return _redirect(req, "admin_web_clients", flash_kind="error", flash_message="client_id inválido.")
+
+    with SessionLocal() as db:
+        c = db.execute(select(Client).where(Client.id == client_id)).scalar_one_or_none()
+        if not c:
+            return _redirect(req, "admin_web_clients", flash_kind="error", flash_message=f"Client não encontrado: {client_id}")
+
+        token = _gen_client_token(6)
+        try:
+            c.login_token = token
+        except Exception as e:
+            logger.error("CLIENT_TOKEN_FIELD_MISSING: err=%s", e)
+            return _redirect(
+                req,
+                "admin_web_clients",
+                flash_kind="error",
+                flash_message="Campo clients.login_token não existe. Rode a migração do portal.",
+            )
+
+        try:
+            c.login_token_created_at = func.now()
+        except Exception:
+            pass
+
+        db.add(c)
+        db.commit()
+
+    logger.info("ADMIN_WEB_CLIENT_TOKEN_CREATED: client_id=%s", client_id)
+    return _redirect(
+        req,
+        "admin_web_clients",
+        flash_kind="success",
+        flash_message=f"Token gerado para {client_id}: {token}",
+    )
 
 
 @router.get("/agents", name="admin_web_agents")
@@ -755,7 +820,7 @@ async def chatlab_send(req: Request):
                 intents=intents,
             )
     except Exception as e:
-        logger.error("CHATLAB_LEAD_CAPTURE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
+        logger.error("CHATLAB_LEAD_CAPTURE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, from_number, e)
 
     # Estado (memória curta) – store local do ChatLab (isolado por agent)
     state_key = f"{agent_id}:{from_number}"
