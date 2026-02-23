@@ -1,184 +1,98 @@
-from sqlalchemy import Column, Text, DateTime
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import JSONB
+"""
+app/models.py
+
+Models SQLAlchemy (ORM clássico com Column) compatíveis com seu schema Postgres atual.
+
+Tabelas no banco (confirmadas por você):
+- clients (id TEXT PK, name TEXT NOT NULL, plan TEXT default 'basic', created_at timestamptz default now())
+- agents  (id TEXT PK, client_id TEXT FK, name TEXT, instance TEXT UNIQUE, evolution_base_url TEXT, api_key TEXT,
+          status TEXT default 'pending', last_seen_at timestamptz, created_at timestamptz default now()
+          + (SaaS rules) rules_json JSONB default '{}' e rules_updated_at timestamptz default now() — se você migrou)
+- leads   (id BIGINT PK, client_id TEXT NOT NULL, agent_id TEXT nullable, instance TEXT NOT NULL, from_number TEXT NOT NULL,
+          nome/telefone/assunto TEXT, status TEXT default 'iniciado', origem TEXT default 'primeiro_contato',
+          intent_detected TEXT, first_seen_at/created_at/updated_at timestamptz default now(), lead_saved boolean default false)
+
+IMPORTANTE:
+- Se sua tabela `agents` ainda não tem rules_json/rules_updated_at, rode a migração SQL:
+    ALTER TABLE agents ADD COLUMN IF NOT EXISTS rules_json jsonb NOT NULL DEFAULT '{}'::jsonb;
+    ALTER TABLE agents ADD COLUMN IF NOT EXISTS rules_updated_at timestamptz NOT NULL DEFAULT now();
+
+"""
+
+import sqlalchemy as sa
 from sqlalchemy import Column
-from typing import Optional
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    DateTime,
-    ForeignKey,
-    Text,
-    TIMESTAMP,
-    func,
-)
-from sqlalchemy.orm import (
-    DeclarativeBase,
-    Mapped,
-    mapped_column,
-    relationship,
-    foreign,
-)
+from sqlalchemy.dialects.postgresql import JSONB
 
-# =============================================================================
-# Base declarativa (SQLAlchemy 2.0 style)
-# =============================================================================
-class Base(DeclarativeBase):
-    """
-    Base declarativa para os models do SQLAlchemy.
-
-    Observação:
-    - Este arquivo define apenas modelos e relações.
-    - Conexão/engine/session ficam em app/db.py (separação de responsabilidades).
-    """
-    pass
+from .db import Base
 
 
-# =============================================================================
-# SaaS Multi-tenant: Clients e Agents
-# =============================================================================
 class Client(Base):
-    """
-    Cliente (tenant) do SaaS.
-    Um client pode ter N agents (multi-agente / multi-instância).
-    """
     __tablename__ = "clients"
 
-    # IDs como Text permitem usar UUID/slug sem depender de sequências.
-    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    id = Column(sa.Text, primary_key=True)  # TEXT PK (sem default no banco)
+    name = Column(sa.Text, nullable=False)
+    plan = Column(sa.Text, nullable=True, server_default=sa.text("'basic'"))
+    created_at = Column(sa.DateTime(timezone=True), nullable=True, server_default=sa.func.now())
 
-    name: Mapped[str] = mapped_column(Text, nullable=False)
-    plan: Mapped[str] = mapped_column(Text, nullable=False, default="basic")
-
-    created_at: Mapped[object] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-
-    # Relationship: Client -> Agents (1:N)
-    agents: Mapped[list["Agent"]] = relationship(
-        "Agent",
-        back_populates="client",
-        cascade="all, delete-orphan",
-    )
+    def __repr__(self) -> str:
+        return f"<Client id={self.id!r} name={self.name!r} plan={self.plan!r}>"
 
 
-class Agent(Base):
-    """
-    Agente do WhatsApp dentro de um cliente (tenant).
-
-    Conceito:
-    - Um Agent geralmente corresponde a 1 "instance" na Evolution.
-    - A "instance" precisa ser UNIQUE para rotear corretamente: instance -> agent.
-    """
 class Agent(Base):
     __tablename__ = "agents"
 
-    id = Column(Text, primary_key=True)
-    client_id = Column(Text, nullable=False)
-    name = Column(Text, nullable=False)
-    instance = Column(Text, nullable=False, unique=True)
+    id = Column(sa.Text, primary_key=True)  # TEXT PK (sem default no banco)
+    client_id = Column(sa.Text, sa.ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
 
-    evolution_base_url = Column(Text, nullable=True)
-    api_key = Column(Text, nullable=True)
+    name = Column(sa.Text, nullable=False)
+    instance = Column(sa.Text, nullable=False, unique=True)
 
-    status = Column(Text, nullable=True)
-    last_seen_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now())
+    evolution_base_url = Column(sa.Text, nullable=True)
+    api_key = Column(sa.Text, nullable=True)
 
-    # ✅ REGRAS POR AGENTE (ESSENCIAL)
-    rules_json = Column(JSONB, nullable=False, server_default="{}")
-    rules_updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    
-    # Relationship: Agent -> Client (N:1)
-    client: Mapped["Client"] = relationship("Client", back_populates="agents")
+    status = Column(sa.Text, nullable=True, server_default=sa.text("'pending'"))
+    last_seen_at = Column(sa.DateTime(timezone=True), nullable=True)
+    created_at = Column(sa.DateTime(timezone=True), nullable=True, server_default=sa.func.now())
 
-    # Relationship opcional: Agent -> Leads (1:N)
-    #
-    # ⚠️ IMPORTANTE:
-    # - Como a coluna leads.agent_id atualmente NÃO tem ForeignKey("agents.id"),
-    #   não podemos fazer um relationship "normal" aqui sem migration.
-    # - Se você quiser esse relacionamento "de verdade", o ideal é adicionar FK via Alembic.
-    #
-    # Por enquanto, deixamos a relação apenas no Lead.agent (viewonly) para não quebrar.
-    #
-    # Se um dia você migrar e adicionar FK, você pode habilitar:
-    # leads: Mapped[list["Lead"]] = relationship("Lead", back_populates="agent")
-    # (e ajustar Lead.agent = relationship(... back_populates="leads") )
+    # ✅ Regras por agente (SaaS) — JSONB no Postgres
+    # Se a coluna existir no banco, isso passa a persistir corretamente.
+    rules_json = Column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    rules_updated_at = Column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+
+    def __repr__(self) -> str:
+        return f"<Agent id={self.id!r} client_id={self.client_id!r} instance={self.instance!r} status={self.status!r}>"
 
 
-# =============================================================================
-# Leads
-# =============================================================================
 class Lead(Base):
-    """
-    Lead capturado do WhatsApp.
-
-    Observações de modelagem:
-    - client_id e agent_id são os campos chave para multi-tenant/multi-agente.
-    - agent_id é Text e hoje NÃO tem FK no banco (compat/legacy), então:
-      - o relacionamento Lead.agent precisa usar foreign() no join
-      - e é viewonly=True (não dependemos disso para o runtime funcionar)
-    """
     __tablename__ = "leads"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(sa.BigInteger, primary_key=True)  # BIGINT PK (sequence no banco)
 
-    # Multi-tenant fields
-    client_id: Mapped[str] = mapped_column(Text, nullable=False, default="default", index=True)
+    client_id = Column(sa.Text, nullable=False)
+    agent_id = Column(sa.Text, nullable=True)  # seu schema atual é TEXT nullable
 
-    # ⚠️ Sem FK por enquanto (para não exigir migration imediata).
-    # Se/Quando você migrar, o ideal é:
-    # agent_id = mapped_column(Text, ForeignKey("agents.id", ondelete="SET NULL"), nullable=True, index=True)
-    agent_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    instance = Column(sa.Text, nullable=False)
+    from_number = Column(sa.Text, nullable=False)
 
-    # Legacy/compat + tracking
-    instance: Mapped[str] = mapped_column(Text, nullable=False)
-    from_number: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    nome = Column(sa.Text, nullable=True)
+    telefone = Column(sa.Text, nullable=True)
+    assunto = Column(sa.Text, nullable=True)
 
-    nome: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    telefone: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    assunto: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status = Column(sa.Text, nullable=False, server_default=sa.text("'iniciado'"))
+    origem = Column(sa.Text, nullable=False, server_default=sa.text("'primeiro_contato'"))
+    intent_detected = Column(sa.Text, nullable=True)
 
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="iniciado")
-    origem: Mapped[str] = mapped_column(Text, nullable=False, default="primeiro_contato")
-    intent_detected: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    first_seen_at = Column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+    created_at = Column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+    updated_at = Column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
 
-    first_seen_at: Mapped[object] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-    created_at: Mapped[object] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-    updated_at: Mapped[object] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
+    lead_saved = Column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+
+    # Índice já existe no DB: idx_leads_client_created (client_id, created_at desc)
+    # Não precisa duplicar aqui — mas não atrapalha se você estiver usando migrations.
+    __table_args__ = (
+        sa.Index("idx_leads_client_created", "client_id", sa.desc("created_at")),
     )
 
-    lead_saved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-
-    # -------------------------------------------------------------------------
-    # Relationship opcional: Lead -> Agent
-    # -------------------------------------------------------------------------
-    # Como leads.agent_id NÃO tem ForeignKey para agents.id, o SQLAlchemy não
-    # consegue inferir qual lado é "foreign". Por isso usamos foreign(agent_id).
-    #
-    # viewonly=True:
-    # - essa relação serve para leitura (debug/painel), mas não é usada para
-    #   persistência principal do runtime.
-    agent: Mapped[Optional["Agent"]] = relationship(
-        "Agent",
-        primaryjoin=foreign(agent_id) == Agent.id,
-        viewonly=True,
-    )
-
-    #rules_json = Column(JSONB, nullable=False, default=dict)
-    #rules_updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    def __repr__(self) -> str:
+        return f"<Lead id={self.id} client_id={self.client_id!r} instance={self.instance!r} from={self.from_number!r}>"
