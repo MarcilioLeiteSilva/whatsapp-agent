@@ -13,7 +13,8 @@ from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import JSONB
 
 from .db import Base
-
+from sqlalchemy import Column, Text, TIMESTAMP
+from sqlalchemy.sql import func
 
 class Client(Base):
     __tablename__ = "clients"
@@ -22,6 +23,11 @@ class Client(Base):
     name = Column(sa.Text, nullable=False)
     plan = Column(sa.Text, nullable=True, server_default=sa.text("'basic'"))
     created_at = Column(sa.DateTime(timezone=True), nullable=True, server_default=sa.func.now())
+
+     # Portal login
+    login_token = Column(Text, nullable=True)
+    login_token_created_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    login_token_last_used_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
         return f"<Client id={self.id!r} name={self.name!r} plan={self.plan!r}>"
