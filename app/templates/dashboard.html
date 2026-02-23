@@ -9,94 +9,124 @@
     </div>
 
     <div class="flex gap-2">
-      <a href="/admin/web/agents" class="h-10 inline-flex items-center px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
+      <a href="{{ url_for('admin_web_agents') }}"
+         class="h-10 inline-flex items-center px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
         Agentes
       </a>
-      <a href="/admin/web/leads" class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
+      <a href="{{ url_for('admin_web_leads') }}"
+         class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
         Leads
       </a>
     </div>
   </div>
 
+  <!-- KPI cards -->
   <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
     <div class="bg-white rounded-2xl shadow-soft p-5">
       <div class="text-xs text-slate-500">Clients</div>
       <div class="mt-2 text-2xl font-bold">{{ stats.clients_count }}</div>
       <div class="mt-2 text-xs text-slate-500">Total cadastrados</div>
     </div>
+
     <div class="bg-white rounded-2xl shadow-soft p-5">
       <div class="text-xs text-slate-500">Agentes</div>
       <div class="mt-2 text-2xl font-bold">{{ stats.agents_count }}</div>
       <div class="mt-2 text-xs text-slate-500">Total cadastrados</div>
     </div>
+
     <div class="bg-white rounded-2xl shadow-soft p-5">
       <div class="text-xs text-slate-500">Leads</div>
       <div class="mt-2 text-2xl font-bold">{{ stats.leads_count }}</div>
       <div class="mt-2 text-xs text-slate-500">Último: {{ stats.last_lead_at or "-" }}</div>
     </div>
+
     <div class="bg-white rounded-2xl shadow-soft p-5">
       <div class="text-xs text-slate-500">Status</div>
-      <div class="mt-2 text-lg font-bold">
-        {% if status.ok %}✅ OK{% else %}⚠️ Atenção{% endif %}
+
+      <div class="mt-2">
+        {% if status.ok %}
+          <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">
+            ● OK
+          </span>
+        {% else %}
+          <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">
+            ● Atenção
+          </span>
+        {% endif %}
       </div>
-      <div class="mt-2 text-xs text-slate-500">
-        DB: {% if status.db_ok %}ok{% else %}erro{% endif %} •
-        Evolution: {% if status.evolution_ok %}ok{% else %}erro{% endif %}
+
+      <div class="mt-3 text-xs text-slate-500">
+        DB: {% if status.db_ok %}<span class="text-emerald-700 font-semibold">ok</span>{% else %}<span class="text-rose-700 font-semibold">erro</span>{% endif %}
+        <span class="mx-2">•</span>
+        Evolution: {% if status.evolution_ok %}<span class="text-emerald-700 font-semibold">ok</span>{% else %}<span class="text-rose-700 font-semibold">erro</span>{% endif %}
       </div>
     </div>
   </div>
 
+  <!-- Leads + Health -->
   <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <!-- Leads recentes -->
     <div class="lg:col-span-2 bg-white rounded-2xl shadow-soft p-5">
       <div class="flex items-center justify-between">
         <h2 class="font-bold">Leads recentes</h2>
-        <a href="/admin/web/leads" class="text-sm font-semibold text-indigo-700 hover:text-indigo-800">Ver todos</a>
+        <a href="{{ url_for('admin_web_leads') }}" class="text-sm font-semibold text-indigo-700 hover:text-indigo-800">
+          Ver todos
+        </a>
       </div>
 
-      <div class="mt-4 overflow-x-auto">
-        <table class="min-w-full text-sm">
-          <thead class="text-slate-500">
-            <tr class="border-b">
-              <th class="text-left py-3 pr-4 font-semibold">Data</th>
-              <th class="text-left py-3 pr-4 font-semibold">Cliente</th>
-              <th class="text-left py-3 pr-4 font-semibold">Agente</th>
-              <th class="text-left py-3 pr-4 font-semibold">De</th>
-              <th class="text-left py-3 pr-4 font-semibold">Assunto</th>
-              <th class="text-left py-3 pr-4 font-semibold">Status</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y">
-            {% for l in recent_leads %}
-              <tr>
-                <td class="py-3 pr-4 text-slate-600">{{ l.created_at or "-" }}</td>
-                <td class="py-3 pr-4">
-                  <div class="font-semibold">{{ l.client_name or l.client_id }}</div>
-                  <div class="text-xs text-slate-500">{{ l.instance }}</div>
-                </td>
-                <td class="py-3 pr-4">
-                  <div class="font-semibold">{{ l.agent_name or (l.agent_id or "-") }}</div>
-                </td>
-                <td class="py-3 pr-4 font-mono text-xs">{{ l.from_number }}</td>
-                <td class="py-3 pr-4 text-slate-700">{{ l.assunto or "-" }}</td>
-                <td class="py-3 pr-4">
-                  {% if l.status %}
-                    <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
-                      {{ l.status }}
-                    </span>
-                  {% else %}
-                    <span class="text-xs text-slate-500">-</span>
-                  {% endif %}
-                </td>
+      {% if recent_leads %}
+        <div class="mt-4 overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead class="text-slate-500">
+              <tr class="border-b">
+                <th class="text-left py-3 pr-4 font-semibold">Data</th>
+                <th class="text-left py-3 pr-4 font-semibold">Cliente</th>
+                <th class="text-left py-3 pr-4 font-semibold">Agente</th>
+                <th class="text-left py-3 pr-4 font-semibold">De</th>
+                <th class="text-left py-3 pr-4 font-semibold">Assunto</th>
+                <th class="text-left py-3 pr-4 font-semibold">Status</th>
               </tr>
-            {% endfor %}
-            {% if not recent_leads %}
-              <tr><td colspan="6" class="py-8 text-center text-slate-500">Nenhum lead ainda.</td></tr>
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody class="divide-y">
+              {% for l in recent_leads %}
+                <tr>
+                  <td class="py-3 pr-4 text-slate-600 whitespace-nowrap">{{ l.created_at or "-" }}</td>
+
+                  <td class="py-3 pr-4">
+                    <div class="font-semibold">{{ l.client_name or l.client_id }}</div>
+                    <div class="text-xs text-slate-500">{{ l.instance }}</div>
+                  </td>
+
+                  <td class="py-3 pr-4">
+                    <div class="font-semibold">{{ l.agent_name or (l.agent_id or "-") }}</div>
+                  </td>
+
+                  <td class="py-3 pr-4 font-mono text-xs whitespace-nowrap">{{ l.from_number }}</td>
+
+                  <td class="py-3 pr-4 text-slate-700">{{ l.assunto or "-" }}</td>
+
+                  <td class="py-3 pr-4">
+                    {% if l.status %}
+                      <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                        {{ l.status }}
+                      </span>
+                    {% else %}
+                      <span class="text-xs text-slate-500">-</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="mt-4">
+          {% include "partials/empty.html" with context %}
+        </div>
+      {% endif %}
     </div>
 
+    <!-- Saúde do sistema -->
     <div class="bg-white rounded-2xl shadow-soft p-5">
       <h2 class="font-bold">Saúde do sistema</h2>
       <p class="mt-1 text-sm text-slate-600">Checks rápidos do ambiente.</p>
