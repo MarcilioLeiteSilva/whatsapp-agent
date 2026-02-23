@@ -9,51 +9,48 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <script>
     tailwind.config = { theme: { extend: { fontFamily: { sans: ["Montserrat","ui-sans-serif","system-ui"] } } } }
   </script>
 </head>
 
 <body class="min-h-screen bg-slate-950 text-white font-sans">
-  <div class="fixed inset-0 pointer-events-none">
-    <div class="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-indigo-500/20 blur-3xl"></div>
-    <div class="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-cyan-400/20 blur-3xl"></div>
-  </div>
-
-  <div class="min-h-screen flex items-center justify-center px-4 relative">
+  <div class="min-h-screen flex items-center justify-center px-4">
     <div class="w-full max-w-md">
-      <div class="rounded-3xl bg-white/10 border border-white/10 p-7 shadow-2xl">
+      <div class="rounded-3xl bg-white/10 border border-white/10 p-6 shadow-2xl">
         <div class="flex items-center gap-3">
           <div class="h-11 w-11 rounded-2xl bg-gradient-to-tr from-indigo-500 to-cyan-400"></div>
           <div>
             <div class="text-lg font-bold leading-tight">Portal do Cliente</div>
-            <div class="text-sm text-white/70">Acesso por Client ID + Token</div>
+            <div class="text-sm text-white/70">Acesso restrito</div>
           </div>
         </div>
 
         {% if flash and flash.message %}
           <div class="mt-5">
             {% if flash.kind == "error" %}
-              <div class="rounded-2xl bg-rose-500/15 border border-rose-400/30 px-4 py-3 text-sm text-rose-100">❌ {{ flash.message }}</div>
+              <div class="rounded-2xl bg-rose-500/15 border border-rose-400/30 px-4 py-3 text-sm text-rose-100">
+                ❌ {{ flash.message }}
+              </div>
             {% else %}
-              <div class="rounded-2xl bg-emerald-500/15 border border-emerald-400/30 px-4 py-3 text-sm text-emerald-100">✅ {{ flash.message }}</div>
+              <div class="rounded-2xl bg-emerald-500/15 border border-emerald-400/30 px-4 py-3 text-sm text-emerald-100">
+                ✅ {{ flash.message }}
+              </div>
             {% endif %}
           </div>
         {% endif %}
 
-        <form class="mt-6 space-y-4" method="post" action="{{ login_action }}" autocomplete="off">
+        <form class="mt-6 space-y-4" method="post" action="{{ login_action }}">
           <div>
             <label class="text-sm text-white/70">Client ID</label>
-            <input name="client_id"
-                   class="mt-1 w-full h-11 rounded-2xl bg-white/10 border border-white/10 px-4 outline-none focus:bg-white/15"
-                   placeholder="c_ab12cd34ef56"
-                   autofocus />
+            <input name="client_id" class="mt-1 w-full h-11 rounded-2xl bg-white/10 border border-white/10 px-4 outline-none focus:bg-white/15"
+                   placeholder="ex: c_abc123..." />
           </div>
 
           <div>
             <label class="text-sm text-white/70">Token</label>
-            <input name="token" type="password"
-                   class="mt-1 w-full h-11 rounded-2xl bg-white/10 border border-white/10 px-4 outline-none focus:bg-white/15"
+            <input name="token" class="mt-1 w-full h-11 rounded-2xl bg-white/10 border border-white/10 px-4 outline-none focus:bg-white/15"
                    placeholder="6 caracteres" />
           </div>
 
@@ -62,7 +59,7 @@
           </button>
 
           <div class="text-xs text-white/60">
-            Solicite seu token ao suporte (gerado no painel admin).
+            O token é gerado pelo admin no painel.
           </div>
         </form>
       </div>
