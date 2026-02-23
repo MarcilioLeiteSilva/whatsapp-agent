@@ -4,25 +4,37 @@ app/portal_web.py
 Portal do Cliente (SSR) - cliente enxerga APENAS dados do próprio client_id.
 
 Rotas:
-- Login:     /portal/login
-- Logout:    /portal/logout
-- Dashboard: /portal
-- Agents:    /portal/agents
-- Leads:     /portal/leads
+- Login:       /portal/login
+- Logout:      /portal/logout
+- Dashboard:   /portal
+- Agents:      /portal/agents
+- Leads:       /portal/leads
+- Export CSV:  /portal/leads/export.csv
 
 Auth:
 - Login: client_id + token (clients.login_token)
 - Cookie httponly: client_token + client_id
+
+Timezone/format:
+- APP_TIMEZONE=America/Sao_Paulo (default)
+- Datas: dd/mm/yyyy HH:MM:SS
+
+Online badge:
+- AGENT_ONLINE_WINDOW_SECONDS=300 (default 5 min)
 """
 
 from __future__ import annotations
 
 import os
+import csv
+import io
 import logging
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from typing import Optional, Any
 
 from fastapi import APIRouter, Request, Form
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from starlette.templating import Jinja2Templates
 
 from sqlalchemy import select, func, desc, or_
@@ -34,6 +46,9 @@ logger = logging.getLogger("agent")
 
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 router = APIRouter(prefix="/portal", tags=["portal_web"])
+
+BR_TZ = ZoneInfo(os.getenv("APP_TIMEZONE", "America/Sao_Paulo"))
+ONLINE_WINDOW_SECONDS = int(os.getenv("AGENT_ONLINE_WINDOW_SECONDS", "300"))  # 5 min
 
 
 # -----------------------------------------------------------------------------
@@ -74,12 +89,37 @@ def _redirect(
             qp[str(k)] = str(v)
 
     if qp:
-        # sem depender de httpx aqui
         from urllib.parse import urlencode
+
         sep = "&" if "?" in url else "?"
         url = f"{url}{sep}{urlencode(qp)}"
 
     return RedirectResponse(url, status_code=303)
+
+
+def _to_local_dt(dt: Any) -> Optional[datetime]:
+    if not dt:
+        return None
+    if isinstance(dt, datetime):
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(BR_TZ)
+    return None
+
+
+def _fmt_dt_br(dt: Any) -> Optional[str]:
+    d = _to_local_dt(dt)
+    if not d:
+        return None
+    return d.strftime("%d/%m/%Y %H:%M:%S")
+
+
+def _is_agent_online(last_seen_at: Any) -> bool:
+    d = _to_local_dt(last_seen_at)
+    if not d:
+        return False
+    now = datetime.now(BR_TZ)
+    return (now - d) <= timedelta(seconds=ONLINE_WINDOW_SECONDS)
 
 
 def _require_client(req: Request) -> str:
@@ -114,14 +154,16 @@ def _client_to_view(c: Client) -> dict:
 
 
 def _agent_to_view(a: Agent) -> dict:
+    last_seen_raw = getattr(a, "last_seen_at", None)
     return {
         "id": getattr(a, "id", None),
         "client_id": getattr(a, "client_id", None),
         "name": getattr(a, "name", None),
         "instance": getattr(a, "instance", None),
         "status": getattr(a, "status", None),
-        "last_seen_at": str(getattr(a, "last_seen_at", "") or "") or None,
-        "created_at": str(getattr(a, "created_at", "") or "") or None,
+        "online": _is_agent_online(last_seen_raw),
+        "last_seen_at": _fmt_dt_br(last_seen_raw) or None,
+        "created_at": _fmt_dt_br(getattr(a, "created_at", None)) or None,
     }
 
 
@@ -138,8 +180,34 @@ def _lead_to_view(l: Lead, agent_name: Optional[str] = None) -> dict:
         "assunto": getattr(l, "assunto", None),
         "status": getattr(l, "status", None),
         "intent_detected": getattr(l, "intent_detected", None),
-        "created_at": str(getattr(l, "created_at", "") or "") or None,
+        "created_at": _fmt_dt_br(getattr(l, "created_at", None)) or None,
     }
+
+
+def _build_portal_leads_stmt(client_id: str, q: str = "", agent_id: str = "", limit: int = 200):
+    q = (q or "").strip()
+    agent_id = (agent_id or "").strip()
+
+    stmt = select(Lead).where(Lead.client_id == client_id)
+
+    if agent_id:
+        stmt = stmt.where(Lead.agent_id == agent_id)
+
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                Lead.from_number.ilike(like),
+                Lead.nome.ilike(like),
+                Lead.telefone.ilike(like),
+                Lead.assunto.ilike(like),
+                Lead.instance.ilike(like),
+                Lead.agent_id.ilike(like),
+            )
+        )
+
+    stmt = stmt.order_by(desc(Lead.created_at)).limit(limit)
+    return stmt
 
 
 # -----------------------------------------------------------------------------
@@ -231,20 +299,17 @@ async def portal_dashboard(req: Request):
         client = db.execute(select(Client).where(Client.id == client_id).limit(1)).scalar_one_or_none()
         client_view = _client_to_view(client) if client else {"id": client_id, "name": client_id, "plan": ""}
 
-        # total leads do cliente
         total_leads = db.execute(
             select(func.count()).select_from(Lead).where(Lead.client_id == client_id)
         ).scalar_one()
 
-        # agentes do cliente
         agents = db.execute(
             select(Agent).where(Agent.client_id == client_id).order_by(desc(Agent.created_at))
         ).scalars().all()
 
-        agent_ids = [a.id for a in agents]
         agents_map = {str(a.id): str(getattr(a, "name", "") or a.id) for a in agents}
+        agent_ids = [a.id for a in agents]
 
-        # leads por agente (group by agent_id)
         per_agent_rows = []
         if agent_ids:
             per_agent_rows = db.execute(
@@ -254,7 +319,6 @@ async def portal_dashboard(req: Request):
             ).all()
 
         per_agent = []
-        # inclui também "sem agent_id" (nulo), se existir
         null_cnt = db.execute(
             select(func.count()).select_from(Lead).where(Lead.client_id == client_id, Lead.agent_id.is_(None))
         ).scalar_one()
@@ -272,7 +336,6 @@ async def portal_dashboard(req: Request):
 
         per_agent.sort(key=lambda x: x["count"], reverse=True)
 
-        # últimos leads
         recent = db.execute(
             select(Lead).where(Lead.client_id == client_id).order_by(desc(Lead.created_at)).limit(10)
         ).scalars().all()
@@ -341,25 +404,7 @@ async def portal_leads(req: Request, q: str = "", agent_id: str = ""):
         ).scalars().all()
         agents_map = {str(a.id): str(getattr(a, "name", "") or a.id) for a in agents}
 
-        stmt = select(Lead).where(Lead.client_id == client_id)
-
-        if agent_id:
-            stmt = stmt.where(Lead.agent_id == agent_id)
-
-        if q:
-            like = f"%{q}%"
-            stmt = stmt.where(
-                or_(
-                    Lead.from_number.ilike(like),
-                    Lead.nome.ilike(like),
-                    Lead.telefone.ilike(like),
-                    Lead.assunto.ilike(like),
-                    Lead.instance.ilike(like),
-                    Lead.agent_id.ilike(like),
-                )
-            )
-
-        stmt = stmt.order_by(desc(Lead.created_at)).limit(200)
+        stmt = _build_portal_leads_stmt(client_id=client_id, q=q, agent_id=agent_id, limit=200)
         leads = db.execute(stmt).scalars().all()
 
         leads_view = [
@@ -376,5 +421,68 @@ async def portal_leads(req: Request, q: str = "", agent_id: str = ""):
         "agent_id": agent_id,
         "agents": [{"id": str(a.id), "name": str(getattr(a, "name", "") or a.id)} for a in agents],
         "leads": leads_view,
+        "export_csv_url": _url(req, "portal_leads_export_csv"),  # pra você usar no template
     }
     return templates.TemplateResponse("portal_leads.html", ctx)
+
+
+# -----------------------------------------------------------------------------
+# Export CSV (protected)
+# -----------------------------------------------------------------------------
+@router.get("/leads/export.csv", name="portal_leads_export_csv")
+async def portal_leads_export_csv(req: Request, q: str = "", agent_id: str = ""):
+    try:
+        client_id = _require_client(req)
+    except PermissionError:
+        return _redirect(req, "portal_login", flash_kind="error", flash_message="Faça login para acessar.")
+
+    q = (q or "").strip()
+    agent_id = (agent_id or "").strip()
+
+    with SessionLocal() as db:
+        agents = db.execute(
+            select(Agent).where(Agent.client_id == client_id)
+        ).scalars().all()
+        agents_map = {str(a.id): str(getattr(a, "name", "") or a.id) for a in agents}
+
+        stmt = _build_portal_leads_stmt(client_id=client_id, q=q, agent_id=agent_id, limit=5000)
+        leads = db.execute(stmt).scalars().all()
+
+        rows = [
+            _lead_to_view(l, agent_name=agents_map.get(str(getattr(l, "agent_id", "") or "")))
+            for l in leads
+        ]
+
+    def _iter_csv():
+        buf = io.StringIO()
+        w = csv.writer(buf, delimiter=";")
+
+        w.writerow([
+            "id", "created_at", "agent_id", "agent_name",
+            "instance", "from_number", "nome", "telefone",
+            "assunto", "intent_detected", "status",
+        ])
+
+        for r in rows:
+            w.writerow([
+                r.get("id"),
+                r.get("created_at"),
+                r.get("agent_id"),
+                r.get("agent_name"),
+                r.get("instance"),
+                r.get("from_number"),
+                r.get("nome"),
+                r.get("telefone"),
+                r.get("assunto"),
+                r.get("intent_detected"),
+                r.get("status"),
+            ])
+
+        yield buf.getvalue()
+
+    filename = f"leads_{client_id}_{datetime.now(BR_TZ).strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        _iter_csv(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
