@@ -1,31 +1,71 @@
-{% extends "base.html" %}
-{% block title %}Login{% endblock %}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Login • Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
 
-{% block content %}
-  <div class="max-w-md mx-auto mt-10">
-    <div class="card p-6">
-      <h1 class="text-xl font-semibold">Login (Admin DEV)</h1>
-      <p class="text-sm text-slate-600 mt-1">
-        Entre com usuário e token para acessar o painel.
-      </p>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-      <form class="mt-5 space-y-3" method="post" action="{{ login_action }}">
-        <div>
-          <div class="label">Usuário</div>
-          <input class="input" name="username" placeholder="admin" required />
+  <script>
+    tailwind.config = {
+      theme: { extend: { fontFamily: { sans: ["Montserrat","ui-sans-serif","system-ui"] } } }
+    }
+  </script>
+</head>
+
+<body class="min-h-screen bg-slate-950 text-white font-sans">
+  <div class="min-h-screen flex items-center justify-center px-4">
+    <div class="w-full max-w-md">
+      <div class="rounded-3xl bg-white/10 border border-white/10 p-6 shadow-2xl">
+        <div class="flex items-center gap-3">
+          <div class="h-11 w-11 rounded-2xl bg-gradient-to-tr from-indigo-500 to-cyan-400"></div>
+          <div>
+            <div class="text-lg font-bold leading-tight">Admin Panel</div>
+            <div class="text-sm text-white/70">Acesso restrito</div>
+          </div>
         </div>
 
-        <div>
-          <div class="label">Token</div>
-          <input class="input" name="token" placeholder="cole o ADMIN_TOKEN" required />
-        </div>
+        {% if flash and flash.message %}
+          <div class="mt-5">
+            {% if flash.kind == "error" %}
+              <div class="rounded-2xl bg-rose-500/15 border border-rose-400/30 px-4 py-3 text-sm text-rose-100">
+                ❌ {{ flash.message }}
+              </div>
+            {% else %}
+              <div class="rounded-2xl bg-emerald-500/15 border border-emerald-400/30 px-4 py-3 text-sm text-emerald-100">
+                ✅ {{ flash.message }}
+              </div>
+            {% endif %}
+          </div>
+        {% endif %}
 
-        <button class="btn btn-primary w-full" type="submit">Entrar</button>
+        <form class="mt-6 space-y-4" method="post" action="{{ login_action }}">
+          <div>
+            <label class="text-sm text-white/70">Usuário</label>
+            <input name="username" class="mt-1 w-full h-11 rounded-2xl bg-white/10 border border-white/10 px-4 outline-none focus:bg-white/15"
+                   placeholder="admin" />
+          </div>
 
-        <div class="text-xs text-slate-500 mt-2">
-          Dica: no EasyPanel, configure <span class="code">ADMIN_USER</span> e <span class="code">ADMIN_TOKEN</span>.
-        </div>
-      </form>
+          <div>
+            <label class="text-sm text-white/70">Token</label>
+            <input name="token" class="mt-1 w-full h-11 rounded-2xl bg-white/10 border border-white/10 px-4 outline-none focus:bg-white/15"
+                   placeholder="ADMIN_TOKEN" />
+          </div>
+
+          <button class="w-full h-11 rounded-2xl bg-white text-slate-900 font-semibold hover:bg-slate-100">
+            Entrar
+          </button>
+
+          <div class="text-xs text-white/60">
+            Dica: em produção, configure <span class="font-mono">ADMIN_TOKEN</span>.
+          </div>
+        </form>
+      </div>
     </div>
   </div>
-{% endblock %}
+</body>
+</html>
