@@ -19,7 +19,7 @@ class AgentRules:
 
 # cache simples por agent_id (DEV ok)
 _CACHE: dict[str, tuple[float, dict]] = {}
-_CACHE_TTL_SECONDS = 10  # curto: permite editar no painel e refletir rápido
+_CACHE_TTL_SECONDS = 0  # curto: permite editar no painel e refletir rápido
 
 
 def _now() -> float:
