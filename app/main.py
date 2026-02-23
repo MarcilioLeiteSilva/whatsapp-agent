@@ -459,7 +459,7 @@ async def webhook(req: Request):
     # -------------------------------------------------------------------------
     # Regras normais do bot (rules.py)
     # -------------------------------------------------------------------------
-    reply = reply_for(number, text, state)
+    
     logger.info(
         "RULES_REPLY: client_id=%s agent_id=%s instance=%s from=%s reply=%r step=%s",
         client_id,
