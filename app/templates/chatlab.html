@@ -31,8 +31,8 @@
 
   {% if instances and instances|length > 0 %}
     <div class="mt-6">
-      <!-- Grid of phones -->
-      <div id="phonesGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+      <!-- Grid of phones: sempre 2 colunas no desktop -->
+      <div id="phonesGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
 
       <div class="mt-4 text-sm text-slate-500">
         Dicas: <span class="font-mono text-xs">Enter</span> envia • <span class="font-mono text-xs">Shift+Enter</span> quebra linha • Máximo 6 telas
@@ -40,9 +40,7 @@
     </div>
 
     <template id="phoneTpl">
-      <!-- Phone shell -->
       <div class="bg-white rounded-2xl shadow-soft p-4">
-        <!-- Phone frame (visual) -->
         <div class="mx-auto w-full max-w-sm">
           <div class="rounded-[2rem] border border-slate-200 bg-slate-50 overflow-hidden">
             <!-- Phone top bar -->
@@ -85,9 +83,7 @@
             <!-- Messages -->
             <div data-field="messages"
                  class="h-[420px] md:h-[520px] bg-slate-100 px-3 py-3 overflow-y-auto space-y-2">
-              <!-- empty state -->
-              <div data-field="empty"
-                   class="text-center text-xs text-slate-500 pt-10">
+              <div data-field="empty" class="text-center text-xs text-slate-500 pt-10">
                 Envie uma mensagem para começar.
               </div>
             </div>
@@ -154,8 +150,6 @@
         const box = el('[data-field="messages"]', card);
         const empty = el('[data-field="empty"]', card);
         if(!box || !empty) return;
-
-        // count bubbles (div with data-msg)
         const bubbles = els('[data-msg="1"]', box);
         empty.classList.toggle("hidden", bubbles.length > 0);
       }
@@ -189,7 +183,6 @@
         row.appendChild(bubble);
         box.appendChild(row);
 
-        // scroll
         box.scrollTop = box.scrollHeight;
       }
 
@@ -204,7 +197,6 @@
           return;
         }
 
-        // render user msg immediately
         appendBubble(card, "user", text);
         textEl.value = "";
         setMiniStatus(card, "Enviando...");
@@ -233,7 +225,6 @@
             appendBubble(card, "bot", (data.reply ?? "—") + "");
           }
 
-          // show a short state hint (step)
           const step = data.state && data.state.step ? data.state.step : null;
           setMiniStatus(card, step ? ("step: " + step) : "OK");
         }catch(e){
@@ -246,7 +237,6 @@
       function clearChat(card){
         const box = el('[data-field="messages"]', card);
         if(!box) return;
-        // remove all message bubbles
         els('[data-msg="1"]', box).forEach(n => n.remove());
         setPaused(card, false);
         setMiniStatus(card, "—");
@@ -254,19 +244,14 @@
       }
 
       function wireCard(card){
-        // remove button
         el('[data-action="remove"]', card).addEventListener("click", () => {
           card.remove();
           refreshControls();
         });
 
-        // send button
         el('[data-action="send"]', card).addEventListener("click", () => doSend(card));
-
-        // clear button
         el('[data-action="clear"]', card).addEventListener("click", () => clearChat(card));
 
-        // Enter to send (Shift+Enter newline)
         const textEl = el('[data-field="text"]', card);
         textEl.addEventListener("keydown", (e) => {
           if(e.key === "Enter" && !e.shiftKey){
@@ -275,7 +260,6 @@
           }
         });
 
-        // initial empty
         ensureEmptyShownIfNoMessages(card);
       }
 
@@ -285,7 +269,6 @@
 
         const node = tpl.content.firstElementChild.cloneNode(true);
 
-        // optional prefill
         if(prefill && prefill.instance){
           const sel = el('[data-field="instance"]', node);
           if(sel) sel.value = prefill.instance;
@@ -305,14 +288,9 @@
         addBtn.disabled = count >= MAX_PHONES;
         addBtn.classList.toggle("opacity-50", addBtn.disabled);
         addBtn.classList.toggle("cursor-not-allowed", addBtn.disabled);
-
-        // if only 1 phone, we still allow removing it (ok)
-        // but you can enforce minimum 1 if you want
       }
 
-      // global buttons
       addBtn.addEventListener("click", () => {
-        // try to prefill with first phone values (nice UX)
         const first = grid.children[0];
         const prefill = first ? {
           instance: el('[data-field="instance"]', first)?.value,
