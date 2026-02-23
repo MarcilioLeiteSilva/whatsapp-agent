@@ -188,5 +188,5 @@ class Lead(Base):
         viewonly=True,
     )
 
-    rules_json = Column(JSONB, nullable=False, default=dict)
-    rules_updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    #rules_json = Column(JSONB, nullable=False, default=dict)
+    #rules_updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
