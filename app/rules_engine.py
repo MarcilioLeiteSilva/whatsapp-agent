@@ -27,25 +27,23 @@ def _now() -> float:
 
 
 def load_rules_for_agent(agent_id: str) -> dict:
-    """
-    Busca rules_json do Agent no banco com cache curto.
-    """
     if not agent_id:
         return {}
 
+    # se estiver em cache, usa
     hit = _CACHE.get(agent_id)
     if hit:
-        ts, rules = hit
-        if _now() - ts < _CACHE_TTL_SECONDS:
-            return rules
+        return hit[1]
 
     with SessionLocal() as db:
-        a = db.execute(select(Agent).where(Agent.id == agent_id).limit(1)).scalar_one_or_none()
+        a = db.execute(
+            select(Agent).where(Agent.id == agent_id).limit(1)
+        ).scalar_one_or_none()
         rules = (getattr(a, "rules_json", None) or {}) if a else {}
 
     _CACHE[agent_id] = (_now(), rules)
     return rules
-
+    
 
 def invalidate_agent_rules(agent_id: str) -> None:
     _CACHE.pop(agent_id, None)
