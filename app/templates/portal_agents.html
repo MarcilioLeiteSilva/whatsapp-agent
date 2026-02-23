@@ -34,6 +34,12 @@
         {% if not agents %}
           <tr><td colspan="4" class="py-8 text-center text-slate-500">Nenhum agente cadastrado.</td></tr>
         {% endif %}
+        {% if a.online %}
+            <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">● online</span>
+        {% else %}
+            <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">● offline</span>
+        {% endif %}
+            <div class="text-xs text-slate-500 mt-1">last_seen: {{ a.last_seen_at or "-" }}</div>    
       </tbody>
     </table>
   </div>
