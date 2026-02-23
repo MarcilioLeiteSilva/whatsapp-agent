@@ -28,6 +28,14 @@
   </div>
 
   <div class="mt-6 bg-white rounded-2xl shadow-soft p-5 overflow-x-auto">
+
+    <a
+        href="{{ export_csv_url }}?q={{ q }}&agent_id={{ agent_id }}"
+        class="h-10 px-4 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50 inline-flex items-center"
+    >
+      Exportar CSV
+    </a>
+    
     <table class="min-w-full text-sm">
       <thead class="text-slate-500">
         <tr class="border-b">
