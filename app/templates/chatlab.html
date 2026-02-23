@@ -5,153 +5,334 @@
   <div class="flex items-start justify-between gap-4 flex-col md:flex-row">
     <div>
       <h1 class="text-2xl font-bold">ChatLab</h1>
-      <p class="text-sm text-slate-600">Testa rules por agent sem enviar para a Evolution.</p>
+      <p class="text-sm text-slate-600">Teste regras por agent sem enviar para a Evolution. Multi-telas (2 por padrão, até 6).</p>
     </div>
 
-    <div class="flex gap-2">
+    <div class="flex flex-wrap gap-2">
+      <button id="addPhone"
+              class="h-10 inline-flex items-center px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
+        + Adicionar tela
+      </button>
+      <button id="clearAll"
+              class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
+        Limpar tudo
+      </button>
+
       <a href="{{ url_for('admin_web_agents') }}"
          class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
         Ver agentes
       </a>
       <a href="{{ url_for('admin_web_simulator') }}"
          class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
-        Abrir Simulator
+        Simulator
       </a>
     </div>
   </div>
 
-  <div class="mt-6 bg-white rounded-2xl shadow-soft p-5">
-    {% if instances and instances|length > 0 %}
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div>
-          <label class="text-sm text-slate-600">Instance</label>
-          <select id="instance"
-                  class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200">
-            {% for i in instances %}
-              <option value="{{ i }}">{{ i }}</option>
-            {% endfor %}
-          </select>
-        </div>
+  {% if instances and instances|length > 0 %}
+    <div class="mt-6">
+      <!-- Grid of phones -->
+      <div id="phonesGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
 
-        <div>
-          <label class="text-sm text-slate-600">from_number</label>
-          <input id="from_number"
-                 value="5531999999999"
-                 class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
-                 placeholder="5531999999999">
-        </div>
-
-        <div>
-          <label class="text-sm text-slate-600">Mensagem</label>
-          <input id="text"
-                 class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
-                 placeholder="Oi">
-        </div>
+      <div class="mt-4 text-sm text-slate-500">
+        Dicas: <span class="font-mono text-xs">Enter</span> envia • <span class="font-mono text-xs">Shift+Enter</span> quebra linha • Máximo 6 telas
       </div>
+    </div>
 
-      <div class="mt-4 flex flex-wrap items-center gap-2">
-        <button id="send"
-                class="h-11 px-4 rounded-2xl bg-slate-900 text-white font-semibold hover:bg-slate-800">
-          Enviar
-        </button>
+    <template id="phoneTpl">
+      <!-- Phone shell -->
+      <div class="bg-white rounded-2xl shadow-soft p-4">
+        <!-- Phone frame (visual) -->
+        <div class="mx-auto w-full max-w-sm">
+          <div class="rounded-[2rem] border border-slate-200 bg-slate-50 overflow-hidden">
+            <!-- Phone top bar -->
+            <div class="bg-gradient-to-r from-indigo-600 to-cyan-500 px-3 py-3 text-white">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0 flex-1">
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="block text-[11px] text-white/80">Instance</label>
+                      <select data-field="instance"
+                              class="mt-1 w-full h-9 rounded-xl bg-white/95 text-slate-900 text-xs px-3 outline-none">
+                        {% for i in instances %}
+                          <option value="{{ i }}">{{ i }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block text-[11px] text-white/80">from_number</label>
+                      <input data-field="from_number"
+                             class="mt-1 w-full h-9 rounded-xl bg-white/95 text-slate-900 text-xs px-3 outline-none"
+                             value="5531999999999"
+                             placeholder="5531999999999" />
+                    </div>
+                  </div>
+                </div>
 
-        <button id="clear"
-                class="h-11 px-4 rounded-2xl bg-white border border-slate-200 text-slate-900 font-semibold hover:bg-slate-50">
-          Limpar
-        </button>
+                <div class="flex flex-col items-end gap-2">
+                  <button data-action="remove"
+                          class="h-9 px-3 rounded-xl bg-white/10 text-white text-xs font-semibold hover:bg-white/15">
+                    Remover
+                  </button>
+                  <span data-field="pausedBadge"
+                        class="hidden inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-[11px] font-semibold">
+                    paused
+                  </span>
+                </div>
+              </div>
+            </div>
 
-        <div id="hint" class="text-sm text-slate-500 md:ml-auto">
-          Dica: aperte <span class="font-mono text-xs">Enter</span> para enviar.
-        </div>
-      </div>
+            <!-- Messages -->
+            <div data-field="messages"
+                 class="h-[420px] md:h-[520px] bg-slate-100 px-3 py-3 overflow-y-auto space-y-2">
+              <!-- empty state -->
+              <div data-field="empty"
+                   class="text-center text-xs text-slate-500 pt-10">
+                Envie uma mensagem para começar.
+              </div>
+            </div>
 
-      <div class="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div class="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-          <div class="flex items-center justify-between">
-            <div class="text-xs text-slate-500">Resposta</div>
-            <div id="pausedBadge" class="hidden">
-              <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">
-                paused
-              </span>
+            <!-- Composer -->
+            <div class="bg-white border-t border-slate-200 p-3">
+              <div class="flex gap-2">
+                <textarea data-field="text"
+                          rows="1"
+                          class="flex-1 min-h-[44px] max-h-28 resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
+                          placeholder="Digite a mensagem..."></textarea>
+                <button data-action="send"
+                        class="h-[44px] px-4 rounded-2xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
+                  Enviar
+                </button>
+              </div>
+              <div class="mt-2 flex items-center justify-between">
+                <button data-action="clear"
+                        class="text-xs font-semibold text-slate-600 hover:text-slate-900">
+                  Limpar conversa
+                </button>
+                <span data-field="miniStatus" class="text-[11px] text-slate-500">—</span>
+              </div>
             </div>
           </div>
-          <pre id="reply" class="mt-2 text-sm whitespace-pre-wrap break-words">—</pre>
-        </div>
-
-        <div class="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-          <div class="text-xs text-slate-500">State</div>
-          <pre id="state" class="mt-2 text-sm whitespace-pre-wrap break-words">—</pre>
         </div>
       </div>
+    </template>
 
-      <script>
-        const sendUrl = "{{ send_url }}";
-        function $(id){ return document.getElementById(id); }
+    <script>
+      const sendUrl = "{{ send_url }}";
+      const MAX_PHONES = 6;
 
-        function setPaused(on){
-          const el = $("pausedBadge");
-          if(!el) return;
-          el.classList.toggle("hidden", !on);
+      const grid = document.getElementById("phonesGrid");
+      const tpl = document.getElementById("phoneTpl");
+      const addBtn = document.getElementById("addPhone");
+      const clearAllBtn = document.getElementById("clearAll");
+
+      function el(q, root){ return (root || document).querySelector(q); }
+      function els(q, root){ return Array.from((root || document).querySelectorAll(q)); }
+
+      function nowTime(){
+        const d = new Date();
+        return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+      }
+
+      function setPaused(card, on){
+        const b = el('[data-field="pausedBadge"]', card);
+        if(!b) return;
+        b.classList.toggle("hidden", !on);
+      }
+
+      function setMiniStatus(card, text){
+        const s = el('[data-field="miniStatus"]', card);
+        if(s) s.textContent = text || "—";
+      }
+
+      function ensureEmptyHidden(card){
+        const empty = el('[data-field="empty"]', card);
+        if(empty) empty.classList.add("hidden");
+      }
+
+      function ensureEmptyShownIfNoMessages(card){
+        const box = el('[data-field="messages"]', card);
+        const empty = el('[data-field="empty"]', card);
+        if(!box || !empty) return;
+
+        // count bubbles (div with data-msg)
+        const bubbles = els('[data-msg="1"]', box);
+        empty.classList.toggle("hidden", bubbles.length > 0);
+      }
+
+      function appendBubble(card, who, text){
+        const box = el('[data-field="messages"]', card);
+        if(!box) return;
+
+        ensureEmptyHidden(card);
+
+        const row = document.createElement("div");
+        row.setAttribute("data-msg", "1");
+        row.className = "flex " + (who === "user" ? "justify-end" : "justify-start");
+
+        const bubble = document.createElement("div");
+        bubble.className =
+          (who === "user"
+            ? "max-w-[85%] rounded-2xl rounded-br-md bg-slate-900 text-white px-3 py-2 text-sm shadow-sm"
+            : "max-w-[85%] rounded-2xl rounded-bl-md bg-white text-slate-900 px-3 py-2 text-sm shadow-sm border border-slate-200");
+
+        const meta = document.createElement("div");
+        meta.className = "text-[10px] opacity-70 mb-1 flex items-center justify-between gap-2";
+        meta.innerHTML = `<span>${who === "user" ? "Você" : "Bot"}</span><span>${nowTime()}</span>`;
+
+        const body = document.createElement("div");
+        body.className = "whitespace-pre-wrap break-words";
+        body.textContent = text;
+
+        bubble.appendChild(meta);
+        bubble.appendChild(body);
+        row.appendChild(bubble);
+        box.appendChild(row);
+
+        // scroll
+        box.scrollTop = box.scrollHeight;
+      }
+
+      async function doSend(card){
+        const instance = (el('[data-field="instance"]', card).value || "").trim();
+        const from = (el('[data-field="from_number"]', card).value || "").trim();
+        const textEl = el('[data-field="text"]', card);
+        const text = (textEl.value || "").trim();
+
+        if(!instance || !from || !text){
+          setMiniStatus(card, "Preencha instance, from_number e mensagem.");
+          return;
         }
 
-        async function doSend(){
-          const instance = ($("instance").value || "").trim();
-          const from = ($("from_number").value || "").trim();
-          const text = ($("text").value || "").trim();
+        // render user msg immediately
+        appendBubble(card, "user", text);
+        textEl.value = "";
+        setMiniStatus(card, "Enviando...");
+        setPaused(card, false);
 
-          if(!instance || !from || !text){
-            $("reply").textContent = "erro: preencha instance, from_number e mensagem.";
-            $("state").textContent = "—";
-            setPaused(false);
+        try{
+          const r = await fetch(sendUrl, {
+            method: "POST",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({ instance, from_number: from, text })
+          });
+
+          const data = await r.json();
+
+          if(!data || data.ok === false){
+            appendBubble(card, "bot", "Erro: resposta inválida do servidor.");
+            setMiniStatus(card, "Erro");
             return;
           }
 
-          $("reply").textContent = "enviando...";
-          $("state").textContent = "aguarde...";
-          setPaused(false);
+          setPaused(card, !!data.paused);
 
-          try{
-            const r = await fetch(sendUrl, {
-              method: "POST",
-              headers: {"Content-Type":"application/json"},
-              body: JSON.stringify({ instance, from_number: from, text })
-            });
-
-            const data = await r.json();
-            setPaused(!!data.paused);
-
-            $("reply").textContent = JSON.stringify(
-              { ok: data.ok, paused: data.paused, reply: data.reply },
-              null,
-              2
-            );
-            $("state").textContent = JSON.stringify(data.state || {}, null, 2);
-          }catch(e){
-            $("reply").textContent = "erro: " + e;
-            $("state").textContent = "—";
-            setPaused(false);
+          if(data.paused){
+            appendBubble(card, "bot", "⏸️ Conversa pausada (handoff).");
+          }else{
+            appendBubble(card, "bot", (data.reply ?? "—") + "");
           }
+
+          // show a short state hint (step)
+          const step = data.state && data.state.step ? data.state.step : null;
+          setMiniStatus(card, step ? ("step: " + step) : "OK");
+        }catch(e){
+          appendBubble(card, "bot", "Erro ao enviar: " + e);
+          setMiniStatus(card, "Erro");
+          setPaused(card, false);
+        }
+      }
+
+      function clearChat(card){
+        const box = el('[data-field="messages"]', card);
+        if(!box) return;
+        // remove all message bubbles
+        els('[data-msg="1"]', box).forEach(n => n.remove());
+        setPaused(card, false);
+        setMiniStatus(card, "—");
+        ensureEmptyShownIfNoMessages(card);
+      }
+
+      function wireCard(card){
+        // remove button
+        el('[data-action="remove"]', card).addEventListener("click", () => {
+          card.remove();
+          refreshControls();
+        });
+
+        // send button
+        el('[data-action="send"]', card).addEventListener("click", () => doSend(card));
+
+        // clear button
+        el('[data-action="clear"]', card).addEventListener("click", () => clearChat(card));
+
+        // Enter to send (Shift+Enter newline)
+        const textEl = el('[data-field="text"]', card);
+        textEl.addEventListener("keydown", (e) => {
+          if(e.key === "Enter" && !e.shiftKey){
+            e.preventDefault();
+            doSend(card);
+          }
+        });
+
+        // initial empty
+        ensureEmptyShownIfNoMessages(card);
+      }
+
+      function addPhone(prefill){
+        const count = grid.children.length;
+        if(count >= MAX_PHONES) return;
+
+        const node = tpl.content.firstElementChild.cloneNode(true);
+
+        // optional prefill
+        if(prefill && prefill.instance){
+          const sel = el('[data-field="instance"]', node);
+          if(sel) sel.value = prefill.instance;
+        }
+        if(prefill && prefill.from_number){
+          const inp = el('[data-field="from_number"]', node);
+          if(inp) inp.value = prefill.from_number;
         }
 
-        $("send").addEventListener("click", doSend);
+        wireCard(node);
+        grid.appendChild(node);
+        refreshControls();
+      }
 
-        $("text").addEventListener("keydown", (e) => {
-          if(e.key === "Enter"){
-            e.preventDefault();
-            doSend();
-          }
-        });
+      function refreshControls(){
+        const count = grid.children.length;
+        addBtn.disabled = count >= MAX_PHONES;
+        addBtn.classList.toggle("opacity-50", addBtn.disabled);
+        addBtn.classList.toggle("cursor-not-allowed", addBtn.disabled);
 
-        $("clear").addEventListener("click", () => {
-          $("reply").textContent = "—";
-          $("state").textContent = "—";
-          $("text").value = "";
-          setPaused(false);
-        });
-      </script>
-    {% else %}
+        // if only 1 phone, we still allow removing it (ok)
+        // but you can enforce minimum 1 if you want
+      }
+
+      // global buttons
+      addBtn.addEventListener("click", () => {
+        // try to prefill with first phone values (nice UX)
+        const first = grid.children[0];
+        const prefill = first ? {
+          instance: el('[data-field="instance"]', first)?.value,
+          from_number: el('[data-field="from_number"]', first)?.value
+        } : null;
+        addPhone(prefill);
+      });
+
+      clearAllBtn.addEventListener("click", () => {
+        Array.from(grid.children).forEach(card => clearChat(card));
+      });
+
+      // boot: 2 phones by default
+      addPhone(null);
+      addPhone(null);
+    </script>
+  {% else %}
+    <div class="mt-6">
       {% set message = "Nenhuma instance encontrada. Crie um agente primeiro em Agentes." %}
       {% include "partials/empty.html" %}
-    {% endif %}
-  </div>
+    </div>
+  {% endif %}
 {% endblock %}
