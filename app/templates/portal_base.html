@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{% block title %}Portal{% endblock %}</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ["Montserrat","ui-sans-serif","system-ui"] },
+          boxShadow: { soft: "0 10px 30px rgba(15, 23, 42, 0.10)" }
+        }
+      }
+    }
+  </script>
+</head>
+
+<body class="bg-slate-50 text-slate-900 font-sans">
+  <header class="bg-gradient-to-r from-indigo-600 to-cyan-500">
+    <div class="px-4 md:px-8 py-4 flex items-center gap-3">
+      <div class="h-11 w-11 rounded-2xl bg-white/20"></div>
+
+      <div class="flex-1 min-w-0">
+        <div class="text-white font-semibold leading-tight">Portal do Cliente</div>
+        <div class="text-white/80 text-sm truncate">
+          {{ client.name if client else "Acesso" }}{% if client and client.id %} • <span class="font-mono text-xs">{{ client.id }}</span>{% endif %}
+        </div>
+      </div>
+
+      {% if client %}
+        <a href="{{ url_for('portal_logout') }}"
+           class="h-10 inline-flex items-center px-4 rounded-xl bg-white/10 text-white text-sm font-semibold hover:bg-white/15">
+          Sair
+        </a>
+      {% endif %}
+    </div>
+  </header>
+
+  <nav class="bg-white border-b border-slate-200">
+    <div class="px-4 md:px-8 py-3 flex items-center gap-2 text-sm">
+      {% set current = (active_nav or "") %}
+      <a href="{{ url_for('portal_dashboard') }}"
+         class="px-3 py-2 rounded-xl {% if current=='dashboard' %}bg-slate-900 text-white{% else %}hover:bg-slate-100{% endif %}">
+        Dashboard
+      </a>
+      <a href="{{ url_for('portal_agents') }}"
+         class="px-3 py-2 rounded-xl {% if current=='agents' %}bg-slate-900 text-white{% else %}hover:bg-slate-100{% endif %}">
+        Agentes
+      </a>
+      <a href="{{ url_for('portal_leads') }}"
+         class="px-3 py-2 rounded-xl {% if current=='leads' %}bg-slate-900 text-white{% else %}hover:bg-slate-100{% endif %}">
+        Leads
+      </a>
+    </div>
+  </nav>
+
+  <main class="px-4 md:px-8 py-6">
+    {% if flash and flash.message %}
+      <div class="mb-5">
+        {% if flash.kind == "success" %}
+          <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800 text-sm">✅ {{ flash.message }}</div>
+        {% elif flash.kind == "error" %}
+          <div class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-800 text-sm">❌ {{ flash.message }}</div>
+        {% else %}
+          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-700 text-sm shadow-soft">ℹ️ {{ flash.message }}</div>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
