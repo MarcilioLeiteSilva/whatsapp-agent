@@ -794,3 +794,149 @@ async def chatlab_send(req: Request):
         logger.error("CHATLAB_LEAD_SAVE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
 
     return JSONResponse({"ok": True, "reply": reply, "paused": False, "state": state})
+
+
+@router.get("/agents/{agent_id}/rules", name="admin_web_agent_rules")
+async def agent_rules_page(req: Request, agent_id: str):
+    try:
+        _require_admin(req)
+    except PermissionError:
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
+
+    flash = _flash_from_query(req)
+    agent_id = (agent_id or "").strip()
+
+    with SessionLocal() as db:
+        a = db.execute(select(Agent).where(Agent.id == agent_id).limit(1)).scalar_one_or_none()
+        if not a:
+            return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Agent não encontrado: {agent_id}")
+
+        # rules_json pode ser dict (JSONB) ou None
+        rules_obj = getattr(a, "rules_json", None) or {}
+        rules_text = json.dumps(rules_obj, ensure_ascii=False, indent=2)
+
+        client = db.execute(select(Client).where(Client.id == a.client_id).limit(1)).scalar_one_or_none()
+        client_name = getattr(client, "name", None) if client else None
+
+    ctx = {
+        "request": req,
+        "active_nav": "agents",
+        "flash": flash,
+        "agent": {
+            "id": a.id,
+            "client_id": a.client_id,
+            "client_name": client_name or a.client_id,
+            "name": a.name,
+            "instance": a.instance,
+            "status": a.status,
+        },
+        "rules_text": rules_text,
+        "save_action": _url(req, "admin_web_agent_rules_save", agent_id=agent_id),
+        "reset_action": _url(req, "admin_web_agent_rules_reset", agent_id=agent_id),
+        "back_url": _url(req, "admin_web_agents"),
+    }
+    return templates.TemplateResponse("agent_rules.html", ctx)
+
+
+@router.post("/agents/{agent_id}/rules/save", name="admin_web_agent_rules_save")
+async def agent_rules_save(req: Request, agent_id: str, rules_text: str = Form("")):
+    try:
+        _require_admin(req)
+    except PermissionError:
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
+
+    agent_id = (agent_id or "").strip()
+    rules_text = (rules_text or "").strip()
+
+    if not rules_text:
+        return _redirect(req, "admin_web_agent_rules", flash_kind="error", flash_message="Cole um JSON válido (não pode vazio).", extra_qs={"agent_id": agent_id})
+
+    # valida JSON
+    try:
+        parsed = json.loads(rules_text)
+        if not isinstance(parsed, dict):
+            return _redirect(req, "admin_web_agent_rules", flash_kind="error", flash_message="O JSON raiz deve ser um objeto (dict).")
+    except Exception as e:
+        return _redirect(req, "admin_web_agent_rules", flash_kind="error", flash_message=f"JSON inválido: {e}")
+
+    with SessionLocal() as db:
+        a = db.execute(select(Agent).where(Agent.id == agent_id).limit(1)).scalar_one_or_none()
+        if not a:
+            return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Agent não encontrado: {agent_id}")
+
+        a.rules_json = parsed  # JSONB
+        # atualiza timestamp (se a coluna existir)
+        try:
+            from sqlalchemy import func
+            a.rules_updated_at = func.now()
+        except Exception:
+            pass
+
+        db.add(a)
+        db.commit()
+
+    # invalida cache do rules_engine (pra refletir imediatamente)
+    try:
+        invalidate_agent_rules(agent_id)
+    except Exception:
+        pass
+
+    logger.info("ADMIN_WEB_RULES_SAVED: agent_id=%s instance=%s", agent_id, getattr(a, "instance", None))
+    return _redirect(req, "admin_web_agent_rules", flash_kind="success", flash_message="Regras salvas com sucesso.", extra_qs={"agent_id": agent_id})
+
+
+@router.post("/agents/{agent_id}/rules/reset", name="admin_web_agent_rules_reset")
+async def agent_rules_reset(req: Request, agent_id: str):
+    """
+    Reseta rules_json para um template básico (bom pra bootstrap rápido).
+    """
+    try:
+        _require_admin(req)
+    except PermissionError:
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
+
+    agent_id = (agent_id or "").strip()
+
+    template_rules = {
+        "branding": {"name": "Atendimento"},
+        "hours": {"mode": "business", "open": "08:00", "close": "18:00"},
+        "messages": {
+            "off_hours": "Estamos fora do horário agora 🙂. Se quiser atendimento, digite *atendente*.",
+            "welcome": "Olá! Digite *menu* para ver opções.",
+            "fallback": "Não entendi. Digite *menu* para ver opções.",
+            "handoff_prompt": "Perfeito! Para encaminhar para um atendente, envie:\n*Nome* - *Telefone* - *Assunto*",
+            "handoff_ok": "Obrigado! ✅ Recebemos suas informações e um atendente vai falar com você em breve.",
+            "handoff_retry": "Não consegui entender. Envie no formato:\n*Nome* - *Telefone* - *Assunto*",
+        },
+        "menu": {
+            "title": "Menu Principal",
+            "options": [
+                {"key": "1", "label": "Vendas", "reply": "Certo! Me diga o que você precisa em Vendas."},
+                {"key": "2", "label": "Suporte", "reply": "Beleza! Me diga qual o problema."},
+            ],
+        },
+        "handoff": {"keyword": "atendente", "capture_lead": True},
+    }
+
+    with SessionLocal() as db:
+        a = db.execute(select(Agent).where(Agent.id == agent_id).limit(1)).scalar_one_or_none()
+        if not a:
+            return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Agent não encontrado: {agent_id}")
+
+        a.rules_json = template_rules
+        try:
+            from sqlalchemy import func
+            a.rules_updated_at = func.now()
+        except Exception:
+            pass
+
+        db.add(a)
+        db.commit()
+
+    try:
+        invalidate_agent_rules(agent_id)
+    except Exception:
+        pass
+
+    logger.info("ADMIN_WEB_RULES_RESET: agent_id=%s instance=%s", agent_id, getattr(a, "instance", None))
+    return _redirect(req, "admin_web_agent_rules", flash_kind="success", flash_message="Regras resetadas para o template básico.", extra_qs={"agent_id": agent_id})
