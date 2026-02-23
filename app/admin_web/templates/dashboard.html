@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+  <div class="flex items-center justify-between gap-4">
+    <div>
+      <h1 class="text-xl md:text-2xl font-bold">Dashboard</h1>
+      <p class="text-sm text-slate-600">Visão rápida dos agentes, mensagens e leads.</p>
+    </div>
+
+    <div class="flex gap-2">
+      <a href="/admin/agents" class="h-10 inline-flex items-center px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
+        Ver agentes
+      </a>
+      <a href="/admin/leads" class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
+        Ver leads
+      </a>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="bg-white rounded-2xl shadow-soft p-5">
+      <div class="text-xs text-slate-500">Agentes ativos</div>
+      <div class="mt-2 text-2xl font-bold">{{ kpis.agentes_ativos }}</div>
+      <div class="mt-2 text-xs text-emerald-600">● Online agora</div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-soft p-5">
+      <div class="text-xs text-slate-500">Mensagens (hoje)</div>
+      <div class="mt-2 text-2xl font-bold">{{ kpis.msg_hoje }}</div>
+      <div class="mt-2 text-xs text-slate-500">inclui webhook + simulador</div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-soft p-5">
+      <div class="text-xs text-slate-500">Leads (7 dias)</div>
+      <div class="mt-2 text-2xl font-bold">{{ kpis.leads_7d }}</div>
+      <div class="mt-2 text-xs text-slate-500">captados via regras</div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-soft p-5">
+      <div class="text-xs text-slate-500">Erros webhook (24h)</div>
+      <div class="mt-2 text-2xl font-bold">{{ kpis.webhook_erros_24h }}</div>
+      <div class="mt-2 text-xs text-slate-500">dedup + validações</div>
+    </div>
+  </div>
+
+  <!-- Grid: Agents + Activity -->
+  <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+    <!-- Agents list -->
+    <div class="lg:col-span-2 bg-white rounded-2xl shadow-soft p-5">
+      <div class="flex items-center justify-between">
+        <h2 class="font-bold">Agentes</h2>
+        <a class="text-sm font-semibold text-indigo-700 hover:text-indigo-800" href="/admin/agents">Gerenciar</a>
+      </div>
+
+      <div class="mt-4 overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="text-slate-500">
+            <tr class="border-b">
+              <th class="text-left py-3 pr-4 font-semibold">Nome</th>
+              <th class="text-left py-3 pr-4 font-semibold">Instance</th>
+              <th class="text-left py-3 pr-4 font-semibold">Status</th>
+              <th class="text-left py-3 pr-4 font-semibold">Último seen</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+            {% for a in agents %}
+              <tr>
+                <td class="py-3 pr-4">
+                  <div class="font-semibold">{{ a.name }}</div>
+                  <div class="text-xs text-slate-500">{{ a.client_name }}</div>
+                </td>
+                <td class="py-3 pr-4 font-mono text-xs">{{ a.instance }}</td>
+                <td class="py-3 pr-4">
+                  {% if a.status == "active" %}
+                    <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">
+                      ● Ativo
+                    </span>
+                  {% elif a.status == "pending" %}
+                    <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">
+                      ● Pendente
+                    </span>
+                  {% else %}
+                    <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                      ● {{ a.status }}
+                    </span>
+                  {% endif %}
+                </td>
+                <td class="py-3 pr-4 text-slate-600">{{ a.last_seen_at or "-" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Quick actions -->
+    <div class="bg-white rounded-2xl shadow-soft p-5">
+      <h2 class="font-bold">Ações rápidas</h2>
+      <p class="mt-1 text-sm text-slate-600">Operação do dia a dia.</p>
+
+      <div class="mt-4 space-y-2">
+        <a href="/admin/rules" class="block w-full px-4 py-3 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
+          Editar regras (rules_json)
+        </a>
+        <a href="/admin/simulator" class="block w-full px-4 py-3 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50">
+          Abrir simulador
+        </a>
+        <a href="/admin/health" class="block w-full px-4 py-3 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50">
+          Health check
+        </a>
+      </div>
+
+      <div class="mt-6 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+        <div class="text-xs text-slate-500">Modo SaaS</div>
+        <div class="mt-1 text-sm font-semibold">base_url + api_key + instance por agente</div>
+        <div class="mt-1 text-xs text-slate-600">Pronto para escalar com clientes.</div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
