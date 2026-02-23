@@ -70,7 +70,7 @@ from sqlalchemy import select, func, or_, desc
 from .db import SessionLocal
 from .models import Client, Agent, Lead  # ajuste somente se seus nomes diferirem
 
-from fastapi.responses import JSONResponse
+
 from .store import MemoryStore
 from .rules import reply_for, detect_intents
 from .lead_logger import ensure_first_contact, mark_intent, save_handoff_lead, get_agent_by_instance
