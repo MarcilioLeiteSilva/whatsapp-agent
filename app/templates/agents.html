@@ -83,6 +83,7 @@
                 <th class="th">API Key</th>
                 <th class="th">Status</th>
                 <th class="th">Last seen</th>
+                 <th class="th">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -123,6 +124,9 @@
                   </td>
                   <td class="td text-slate-600">{{ a.last_seen_at or "—" }}</td>
                 </tr>
+                <td class="text-right">
+                  <a class="btn" href="{{ url_for('admin_web_agent_rules', agent_id=a.id) }}">Editar Regras</a>
+                  </td>
               {% endfor %}
             </tbody>
           </table>
