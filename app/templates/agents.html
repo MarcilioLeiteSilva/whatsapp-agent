@@ -7,16 +7,31 @@
       <h1 class="text-2xl font-bold">Agentes</h1>
       <p class="text-sm text-slate-600">Crie e gerencie agents (base_url + api_key + instance por agent).</p>
     </div>
+
+    <div class="flex gap-2">
+      <a href="{{ url_for('admin_web_clients') }}"
+         class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
+        Ver clients
+      </a>
+      <a href="{{ url_for('admin_web_leads') }}"
+         class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
+        Ver leads
+      </a>
+    </div>
   </div>
 
   <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <!-- Form -->
     <div class="bg-white rounded-2xl shadow-soft p-5">
       <h2 class="font-bold">Criar agente</h2>
+      <p class="mt-1 text-sm text-slate-600">Cadastre um novo agente e conecte na Evolution (opcional).</p>
 
       <form class="mt-4 space-y-3" method="post" action="{{ create_agent_action }}">
         <div>
           <label class="text-sm text-slate-600">Client</label>
-          <select name="client_id" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200" required>
+          <select name="client_id"
+                  class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
+                  required>
             {% for c in clients %}
               <option value="{{ c.id }}">{{ c.name }} ({{ c.id }})</option>
             {% endfor %}
@@ -25,32 +40,38 @@
 
         <div>
           <label class="text-sm text-slate-600">Nome</label>
-          <input name="name" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
+          <input name="name"
+                 class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
                  placeholder="Ex: Loja Betim">
         </div>
 
         <div>
           <label class="text-sm text-slate-600">Instance</label>
-          <input name="instance" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
-                 placeholder="ex: betim001" required>
+          <input name="instance"
+                 class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
+                 placeholder="ex: betim001"
+                 required>
         </div>
 
         <div>
           <label class="text-sm text-slate-600">Evolution base_url</label>
-          <input name="evolution_base_url" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
+          <input name="evolution_base_url"
+                 class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
                  placeholder="https://... (opcional)">
         </div>
 
         <div>
           <label class="text-sm text-slate-600">API Key</label>
-          <input name="api_key" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
+          <input name="api_key"
+                 class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
                  placeholder="(opcional)">
         </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="text-sm text-slate-600">Status</label>
-            <select name="status" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200">
+            <select name="status"
+                    class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200">
               <option value="active">active</option>
               <option value="pending">pending</option>
               <option value="disabled">disabled</option>
@@ -58,7 +79,8 @@
           </div>
           <div>
             <label class="text-sm text-slate-600">Agent ID (opcional)</label>
-            <input name="agent_id" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
+            <input name="agent_id"
+                   class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
                    placeholder="deixe vazio">
           </div>
         </div>
@@ -69,59 +91,107 @@
       </form>
     </div>
 
+    <!-- List -->
     <div class="lg:col-span-2 bg-white rounded-2xl shadow-soft p-5">
       <div class="flex items-center justify-between">
         <h2 class="font-bold">Lista de agentes</h2>
         <div class="text-sm text-slate-500">{{ agents|length }} itens</div>
       </div>
 
-      <div class="mt-4 overflow-x-auto">
-        <table class="min-w-full text-sm">
-          <thead class="text-slate-500">
-            <tr class="border-b">
-              <th class="text-left py-3 pr-4 font-semibold">Nome</th>
-              <th class="text-left py-3 pr-4 font-semibold">Instance</th>
-              <th class="text-left py-3 pr-4 font-semibold">Client</th>
-              <th class="text-left py-3 pr-4 font-semibold">Status</th>
-              <th class="text-left py-3 pr-4 font-semibold">Ações</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y">
-            {% for a in agents %}
-              <tr>
-                <td class="py-3 pr-4">
-                  <div class="font-semibold">{{ a.name }}</div>
-                  <div class="text-xs text-slate-500 font-mono">{{ a.id }}</div>
-                </td>
-                <td class="py-3 pr-4 font-mono text-xs">{{ a.instance }}</td>
-                <td class="py-3 pr-4">
-                  <div class="font-semibold">{{ a.client_name or a.client_id }}</div>
-                  <div class="text-xs text-slate-500">{{ a.client_id }}</div>
-                </td>
-                <td class="py-3 pr-4">
-                  {% if a.status == "active" %}
-                    <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">● active</span>
-                  {% elif a.status == "pending" %}
-                    <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">● pending</span>
-                  {% else %}
-                    <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">● {{ a.status }}</span>
-                  {% endif %}
-                  <div class="text-xs text-slate-500 mt-1">last_seen: {{ a.last_seen_at or "-" }}</div>
-                </td>
-                <td class="py-3 pr-4">
-                  <a href="/admin/web/agents/{{ a.id }}/rules"
-                     class="inline-flex items-center h-9 px-3 rounded-xl bg-white border border-slate-200 text-slate-900 text-xs font-semibold hover:bg-slate-50">
-                    Regras
-                  </a>
-                </td>
+      {% if agents %}
+        <div class="mt-4 overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead class="text-slate-500">
+              <tr class="border-b">
+                <th class="text-left py-3 pr-4 font-semibold">Nome</th>
+                <th class="text-left py-3 pr-4 font-semibold">Instance</th>
+                <th class="text-left py-3 pr-4 font-semibold">Client</th>
+                <th class="text-left py-3 pr-4 font-semibold">Conexão</th>
+                <th class="text-left py-3 pr-4 font-semibold">Status</th>
+                <th class="text-left py-3 pr-4 font-semibold">Ações</th>
               </tr>
-            {% endfor %}
-            {% if not agents %}
-              <tr><td colspan="5" class="py-8 text-center text-slate-500">Nenhum agente cadastrado.</td></tr>
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+
+            <tbody class="divide-y">
+              {% for a in agents %}
+                <tr>
+                  <td class="py-3 pr-4">
+                    <div class="font-semibold">{{ a.name }}</div>
+                    <div class="text-xs text-slate-500 font-mono">{{ a.id }}</div>
+                  </td>
+
+                  <td class="py-3 pr-4 font-mono text-xs">{{ a.instance }}</td>
+
+                  <td class="py-3 pr-4">
+                    <div class="font-semibold">{{ a.client_name or a.client_id }}</div>
+                    <div class="text-xs text-slate-500">{{ a.client_id }}</div>
+                  </td>
+
+                  <!-- Connection badges -->
+                  <td class="py-3 pr-4">
+                    {% set has_base = (a.evolution_base_url or "")|trim %}
+                    {% set has_key = (a.api_key or "")|trim %}
+
+                    <div class="flex flex-wrap gap-2">
+                      {% if has_base %}
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">
+                          base_url ✓
+                        </span>
+                      {% else %}
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                          base_url —
+                        </span>
+                      {% endif %}
+
+                      {% if has_key %}
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">
+                          api_key ✓
+                        </span>
+                      {% else %}
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                          api_key —
+                        </span>
+                      {% endif %}
+                    </div>
+
+                    {% if has_base %}
+                      <div class="mt-1 text-xs text-slate-500 break-words">{{ a.evolution_base_url }}</div>
+                    {% endif %}
+                  </td>
+
+                  <!-- Status -->
+                  <td class="py-3 pr-4">
+                    {% if a.status == "active" %}
+                      <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">● active</span>
+                    {% elif a.status == "pending" %}
+                      <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">● pending</span>
+                    {% elif a.status == "disabled" %}
+                      <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 text-xs font-semibold">● disabled</span>
+                    {% else %}
+                      <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">● {{ a.status }}</span>
+                    {% endif %}
+
+                    <div class="text-xs text-slate-500 mt-1">last_seen: {{ a.last_seen_at or "-" }}</div>
+                  </td>
+
+                  <!-- Actions -->
+                  <td class="py-3 pr-4 whitespace-nowrap">
+                    <a href="{{ url_for('admin_web_agent_rules', agent_id=a.id) }}"
+                       class="inline-flex items-center h-9 px-3 rounded-xl bg-white border border-slate-200 text-slate-900 text-xs font-semibold hover:bg-slate-50">
+                      Regras
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="mt-4">
+          {% set message = "Nenhum agente cadastrado." %}
+          {% include "partials/empty.html" %}
+        </div>
+      {% endif %}
     </div>
   </div>
 {% endblock %}
