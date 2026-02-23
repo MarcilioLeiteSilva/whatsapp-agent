@@ -9,6 +9,11 @@ Painel Admin Web (SSR) para DEV:
 - Agents:    /admin/web/agents
 - Leads:     /admin/web/leads
 - Simulator: /admin/web/simulator
+- ChatLab:   /admin/web/chatlab
+- Agent Rules Editor:
+    - GET  /admin/web/agents/{agent_id}/rules
+    - POST /admin/web/agents/{agent_id}/rules/save
+    - POST /admin/web/agents/{agent_id}/rules/reset
 
 Compatível com schema Postgres atual:
 clients:
@@ -25,6 +30,8 @@ agents:
   status TEXT default 'pending'
   last_seen_at TIMESTAMPTZ
   created_at TIMESTAMPTZ default now()
+  rules_json JSONB default '{}' (se você migrou)
+  rules_updated_at TIMESTAMPTZ default now() (se você migrou)
 leads:
   id BIGINT PK
   client_id TEXT NOT NULL
@@ -53,16 +60,12 @@ import os
 import time
 import secrets
 import logging
-
 import json
-from fastapi.responses import JSONResponse
-from .rules_engine import invalidate_agent_rules
-
 from typing import Any, Optional
 
 import httpx
 from fastapi import APIRouter, Request, Form
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from starlette.templating import Jinja2Templates
 
 from sqlalchemy import select, func, or_, desc
@@ -70,10 +73,10 @@ from sqlalchemy import select, func, or_, desc
 from .db import SessionLocal
 from .models import Client, Agent, Lead  # ajuste somente se seus nomes diferirem
 
-
 from .store import MemoryStore
 from .rules import reply_for, detect_intents
 from .lead_logger import ensure_first_contact, mark_intent, save_handoff_lead, get_agent_by_instance
+from .rules_engine import invalidate_agent_rules
 
 logger = logging.getLogger("agent")
 
@@ -112,8 +115,15 @@ def _redirect(
     flash_kind: str = "info",
     flash_message: str = "",
     extra_qs: Optional[dict] = None,
+    path_params: Optional[dict] = None,
 ) -> RedirectResponse:
-    url = _url(req, to_name)
+    """
+    Redirect helper compatível com rotas que exigem path params.
+
+    Ex:
+      return _redirect(req, "admin_web_agent_rules", path_params={"agent_id": agent_id})
+    """
+    url = _url(req, to_name, **(path_params or {}))
     qp: dict[str, str] = {}
 
     if flash_message:
@@ -121,7 +131,6 @@ def _redirect(
         qp["flash_message"] = flash_message
 
     if extra_qs:
-        # converte valores para str para QueryParams
         for k, v in extra_qs.items():
             if v is None:
                 continue
@@ -748,11 +757,11 @@ async def chatlab_send(req: Request):
     except Exception as e:
         logger.error("CHATLAB_LEAD_CAPTURE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
 
-    # Estado (memória curta) – store local do ChatLab
+    # Estado (memória curta) – store local do ChatLab (isolado por agent)
     state_key = f"{agent_id}:{from_number}"
     state = chatlab_store.get_state(state_key)
 
-    # Rodar regras
+    # Rodar regras (ctx por agente)
     ctx = {"client_id": client_id, "agent_id": agent_id, "instance": instance}
     reply = reply_for(from_number, text, state, ctx=ctx)
 
@@ -796,6 +805,9 @@ async def chatlab_send(req: Request):
     return JSONResponse({"ok": True, "reply": reply, "paused": False, "state": state})
 
 
+# -----------------------------------------------------------------------------
+# Agent Rules Editor
+# -----------------------------------------------------------------------------
 @router.get("/agents/{agent_id}/rules", name="admin_web_agent_rules")
 async def agent_rules_page(req: Request, agent_id: str):
     try:
@@ -811,7 +823,6 @@ async def agent_rules_page(req: Request, agent_id: str):
         if not a:
             return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Agent não encontrado: {agent_id}")
 
-        # rules_json pode ser dict (JSONB) ou None
         rules_obj = getattr(a, "rules_json", None) or {}
         rules_text = json.dumps(rules_obj, ensure_ascii=False, indent=2)
 
@@ -849,15 +860,33 @@ async def agent_rules_save(req: Request, agent_id: str, rules_text: str = Form("
     rules_text = (rules_text or "").strip()
 
     if not rules_text:
-        return _redirect(req, "admin_web_agent_rules", flash_kind="error", flash_message="Cole um JSON válido (não pode vazio).", extra_qs={"agent_id": agent_id})
+        return _redirect(
+            req,
+            "admin_web_agent_rules",
+            flash_kind="error",
+            flash_message="Cole um JSON válido (não pode vazio).",
+            path_params={"agent_id": agent_id},
+        )
 
     # valida JSON
     try:
         parsed = json.loads(rules_text)
         if not isinstance(parsed, dict):
-            return _redirect(req, "admin_web_agent_rules", flash_kind="error", flash_message="O JSON raiz deve ser um objeto (dict).")
+            return _redirect(
+                req,
+                "admin_web_agent_rules",
+                flash_kind="error",
+                flash_message="O JSON raiz deve ser um objeto (dict).",
+                path_params={"agent_id": agent_id},
+            )
     except Exception as e:
-        return _redirect(req, "admin_web_agent_rules", flash_kind="error", flash_message=f"JSON inválido: {e}")
+        return _redirect(
+            req,
+            "admin_web_agent_rules",
+            flash_kind="error",
+            flash_message=f"JSON inválido: {e}",
+            path_params={"agent_id": agent_id},
+        )
 
     with SessionLocal() as db:
         a = db.execute(select(Agent).where(Agent.id == agent_id).limit(1)).scalar_one_or_none()
@@ -865,15 +894,14 @@ async def agent_rules_save(req: Request, agent_id: str, rules_text: str = Form("
             return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Agent não encontrado: {agent_id}")
 
         a.rules_json = parsed  # JSONB
-        # atualiza timestamp (se a coluna existir)
         try:
-            from sqlalchemy import func
             a.rules_updated_at = func.now()
         except Exception:
             pass
 
         db.add(a)
         db.commit()
+        db.refresh(a)
 
     # invalida cache do rules_engine (pra refletir imediatamente)
     try:
@@ -882,7 +910,13 @@ async def agent_rules_save(req: Request, agent_id: str, rules_text: str = Form("
         pass
 
     logger.info("ADMIN_WEB_RULES_SAVED: agent_id=%s instance=%s", agent_id, getattr(a, "instance", None))
-    return _redirect(req, "admin_web_agent_rules", flash_kind="success", flash_message="Regras salvas com sucesso.", extra_qs={"agent_id": agent_id})
+    return _redirect(
+        req,
+        "admin_web_agent_rules",
+        flash_kind="success",
+        flash_message="Regras salvas com sucesso.",
+        path_params={"agent_id": agent_id},
+    )
 
 
 @router.post("/agents/{agent_id}/rules/reset", name="admin_web_agent_rules_reset")
@@ -925,13 +959,13 @@ async def agent_rules_reset(req: Request, agent_id: str):
 
         a.rules_json = template_rules
         try:
-            from sqlalchemy import func
             a.rules_updated_at = func.now()
         except Exception:
             pass
 
         db.add(a)
         db.commit()
+        db.refresh(a)
 
     try:
         invalidate_agent_rules(agent_id)
@@ -939,4 +973,10 @@ async def agent_rules_reset(req: Request, agent_id: str):
         pass
 
     logger.info("ADMIN_WEB_RULES_RESET: agent_id=%s instance=%s", agent_id, getattr(a, "instance", None))
-    return _redirect(req, "admin_web_agent_rules", flash_kind="success", flash_message="Regras resetadas para o template básico.", extra_qs={"agent_id": agent_id})
+    return _redirect(
+        req,
+        "admin_web_agent_rules",
+        flash_kind="success",
+        flash_message="Regras resetadas para o template básico.",
+        path_params={"agent_id": agent_id},
+    )
