@@ -26,7 +26,48 @@
 <body class="bg-slate-50 text-slate-900 font-sans">
   <div class="min-h-screen flex">
 
-    <!-- Sidebar -->
+    <!-- Mobile Drawer (hidden on md+) -->
+    <div id="mobileDrawer" class="fixed inset-0 z-50 hidden md:hidden">
+      <div class="absolute inset-0 bg-slate-900/50" onclick="toggleDrawer(false)"></div>
+
+      <aside class="absolute left-0 top-0 h-full w-80 max-w-[85%] bg-slate-900 text-slate-100 flex flex-col shadow-2xl">
+        <div class="px-6 py-6 border-b border-white/10 flex items-center justify-between">
+          <div class="leading-tight">
+            <div class="text-sm font-semibold">{{ client.name or "Cliente" }}</div>
+            <div class="text-xs text-slate-300">{{ client.id }}</div>
+          </div>
+          <button class="h-9 w-9 rounded-xl bg-white/10 hover:bg-white/15" onclick="toggleDrawer(false)" aria-label="Fechar menu">✕</button>
+        </div>
+
+        <nav class="px-3 py-4 space-y-1">
+          <a href="{{ url_for('portal_dashboard') }}"
+             class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10 {% if active_nav=='dashboard' %}bg-white/10{% endif %}">
+            <span class="text-sm font-medium">Dashboard</span>
+          </a>
+
+          <a href="{{ url_for('portal_agents') }}"
+             class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10 {% if active_nav=='agents' %}bg-white/10{% endif %}">
+            <span class="text-sm font-medium">Agentes</span>
+          </a>
+
+          <a href="{{ url_for('portal_leads') }}"
+             class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10 {% if active_nav=='leads' %}bg-white/10{% endif %}">
+            <span class="text-sm font-medium">Leads</span>
+          </a>
+        </nav>
+
+        <div class="mt-auto px-6 py-4 border-t border-white/10">
+          <a href="{{ url_for('portal_logout') }}" class="text-sm font-semibold text-slate-200 hover:text-white">
+            Sair
+          </a>
+          <div class="mt-2 text-xs text-slate-400">
+            Portal do cliente
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Sidebar (desktop) -->
     <aside class="w-72 bg-slate-900 text-slate-100 hidden md:flex flex-col">
       <div class="px-6 py-6 border-b border-white/10">
         <div class="leading-tight">
@@ -36,24 +77,24 @@
       </div>
 
       <nav class="px-3 py-4 space-y-1">
-        <a href="/portal"
+        <a href="{{ url_for('portal_dashboard') }}"
            class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10 {% if active_nav=='dashboard' %}bg-white/10{% endif %}">
           <span class="text-sm font-medium">Dashboard</span>
         </a>
 
-        <a href="/portal/agents"
+        <a href="{{ url_for('portal_agents') }}"
            class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10 {% if active_nav=='agents' %}bg-white/10{% endif %}">
           <span class="text-sm font-medium">Agentes</span>
         </a>
 
-        <a href="/portal/leads"
+        <a href="{{ url_for('portal_leads') }}"
            class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10 {% if active_nav=='leads' %}bg-white/10{% endif %}">
           <span class="text-sm font-medium">Leads</span>
         </a>
       </nav>
 
       <div class="mt-auto px-6 py-4 border-t border-white/10">
-        <a href="/portal/logout" class="text-sm font-semibold text-slate-200 hover:text-white">
+        <a href="{{ url_for('portal_logout') }}" class="text-sm font-semibold text-slate-200 hover:text-white">
           Sair
         </a>
         <div class="mt-2 text-xs text-slate-400">
@@ -67,9 +108,24 @@
 
       <!-- Topbar -->
       <header class="bg-gradient-to-r from-indigo-600 to-cyan-500">
-        <div class="px-4 md:px-8 py-4 flex items-center justify-between">
-          <div class="text-white font-semibold">Portal</div>
-          <div class="text-white/90 text-sm">{{ client.name }}</div>
+        <div class="px-4 md:px-8 py-4 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <!-- Mobile menu button -->
+            <button
+              class="md:hidden h-10 w-10 rounded-2xl bg-white/10 hover:bg-white/15 text-white"
+              onclick="toggleDrawer(true)"
+              aria-label="Abrir menu"
+            >
+              ☰
+            </button>
+
+            <div class="text-white font-semibold">Portal</div>
+          </div>
+
+          <div class="text-right">
+            <div class="text-white/95 text-sm font-semibold leading-tight">{{ client.name }}</div>
+            <div class="text-white/80 text-xs">{{ client.id }}</div>
+          </div>
         </div>
       </header>
 
@@ -90,5 +146,17 @@
       </section>
     </main>
   </div>
+
+  <script>
+    function toggleDrawer(open){
+      const el = document.getElementById("mobileDrawer");
+      if(!el) return;
+      if(open){
+        el.classList.remove("hidden");
+      }else{
+        el.classList.add("hidden");
+      }
+    }
+  </script>
 </body>
 </html>
