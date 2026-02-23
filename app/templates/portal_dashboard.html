@@ -5,60 +5,59 @@
   <div class="flex items-start justify-between gap-4 flex-col md:flex-row">
     <div>
       <h1 class="text-2xl font-bold">Dashboard</h1>
-      <p class="text-sm text-slate-600">Resumo do seu ambiente: leads totais e por agente.</p>
+      <p class="text-sm text-slate-600">Leads totais e por agente.</p>
     </div>
 
     <div class="flex gap-2">
-      <a href="{{ url_for('portal_leads') }}"
-         class="h-10 inline-flex items-center px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
-        Ver Leads
+      <a href="/portal/agents" class="h-10 inline-flex items-center px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
+        Agentes
       </a>
-      <a href="{{ url_for('portal_agents') }}"
-         class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
-        Ver Agentes
+      <a href="/portal/leads" class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
+        Leads
       </a>
     </div>
   </div>
 
   <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
     <div class="bg-white rounded-2xl shadow-soft p-5">
-      <div class="text-xs text-slate-500">Leads totais</div>
-      <div class="mt-2 text-3xl font-bold">{{ stats.total_leads }}</div>
-      <div class="mt-2 text-xs text-slate-500">Acumulado (client)</div>
+      <div class="text-xs text-slate-500">Leads</div>
+      <div class="mt-2 text-2xl font-bold">{{ stats.total_leads }}</div>
+      <div class="mt-2 text-xs text-slate-500">Total do cliente</div>
     </div>
 
     <div class="bg-white rounded-2xl shadow-soft p-5">
       <div class="text-xs text-slate-500">Agentes</div>
-      <div class="mt-2 text-3xl font-bold">{{ stats.agents_count }}</div>
+      <div class="mt-2 text-2xl font-bold">{{ stats.agents_count }}</div>
       <div class="mt-2 text-xs text-slate-500">Ativos/cadastrados</div>
     </div>
 
     <div class="bg-white rounded-2xl shadow-soft p-5">
-      <div class="text-xs text-slate-500">Atalho</div>
-      <div class="mt-2 text-sm text-slate-700">
-        Use o filtro por agente em <span class="font-semibold">Leads</span> para ver desempenho individual.
-      </div>
+      <div class="text-xs text-slate-500">Cliente</div>
+      <div class="mt-2 text-lg font-bold">{{ client.name }}</div>
+      <div class="mt-2 text-xs text-slate-500 font-mono">{{ client.id }}</div>
     </div>
   </div>
 
   <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-    <div class="lg:col-span-1 bg-white rounded-2xl shadow-soft p-5">
+    <div class="bg-white rounded-2xl shadow-soft p-5">
       <h2 class="font-bold">Leads por agente</h2>
-      <p class="mt-1 text-sm text-slate-600">Ranking por volume.</p>
+      <p class="mt-1 text-sm text-slate-600">Distribuição por agent_id.</p>
 
       <div class="mt-4 space-y-2">
-        {% for row in leads_by_agent %}
-          <a class="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 hover:bg-slate-100"
-             href="{{ url_for('portal_leads') }}?agent_id={{ row.agent_id }}">
+        {% for row in per_agent %}
+          <a href="/portal/leads?agent_id={{ row.agent_id }}"
+             class="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200 hover:bg-slate-100">
             <div>
               <div class="text-sm font-semibold">{{ row.agent_name }}</div>
-              <div class="text-xs text-slate-500">{{ row.agent_id or "—" }}</div>
+              <div class="text-xs text-slate-500 font-mono">{{ row.agent_id or "-" }}</div>
             </div>
             <div class="text-sm font-bold">{{ row.count }}</div>
           </a>
         {% endfor %}
-        {% if not leads_by_agent %}
-          <div class="text-sm text-slate-500 py-6 text-center">Nenhum lead ainda.</div>
+        {% if not per_agent %}
+          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-600">
+            Nenhum lead ainda.
+          </div>
         {% endif %}
       </div>
     </div>
@@ -66,7 +65,7 @@
     <div class="lg:col-span-2 bg-white rounded-2xl shadow-soft p-5">
       <div class="flex items-center justify-between">
         <h2 class="font-bold">Leads recentes</h2>
-        <a href="{{ url_for('portal_leads') }}" class="text-sm font-semibold text-indigo-700 hover:text-indigo-800">Ver todos</a>
+        <a href="/portal/leads" class="text-sm font-semibold text-indigo-700 hover:text-indigo-800">Ver todos</a>
       </div>
 
       <div class="mt-4 overflow-x-auto">
@@ -83,9 +82,9 @@
           <tbody class="divide-y">
             {% for l in recent_leads %}
               <tr>
-                <td class="py-3 pr-4 text-slate-600 whitespace-nowrap">{{ l.created_at or "-" }}</td>
+                <td class="py-3 pr-4 text-slate-600">{{ l.created_at or "-" }}</td>
                 <td class="py-3 pr-4">
-                  <div class="font-semibold">{{ l.agent_name or "—" }}</div>
+                  <div class="font-semibold">{{ l.agent_name or (l.agent_id or "-") }}</div>
                   <div class="text-xs text-slate-500">{{ l.instance }}</div>
                 </td>
                 <td class="py-3 pr-4 font-mono text-xs">{{ l.from_number }}</td>
