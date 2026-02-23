@@ -384,7 +384,11 @@ async def webhook(req: Request):
         logger.error("LEAD_CAPTURE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
 
     # Estado da conversa (memória curta)
-    state = store.get_state(number)
+    state_key = f"{agent_id}:{number}"
+    state = store.get_state(state_key)
+
+    ctx = {"client_id": client_id, "agent_id": agent_id, "instance": instance}
+    reply = reply_for(number, text, state, ctx=ctx)
 
     # -------------------------------------------------------------------------
     # Comando ADMIN: listar últimos leads
