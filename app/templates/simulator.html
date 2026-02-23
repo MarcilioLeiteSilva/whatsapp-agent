@@ -2,40 +2,66 @@
 {% block title %}Simulator{% endblock %}
 
 {% block content %}
-  <div>
-    <h1 class="text-2xl font-bold">Simulator</h1>
-    <p class="text-sm text-slate-600">Envia mensagem para o simulator (proxy).</p>
+  <div class="flex items-start justify-between gap-4 flex-col md:flex-row">
+    <div>
+      <h1 class="text-2xl font-bold">Simulator</h1>
+      <p class="text-sm text-slate-600">Envia mensagem para o simulator (proxy).</p>
+    </div>
+
+    <div class="flex gap-2">
+      <a href="{{ url_for('admin_web_chatlab') }}"
+         class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
+        Abrir ChatLab
+      </a>
+    </div>
   </div>
 
   <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
     <div class="bg-white rounded-2xl shadow-soft p-5">
       <h2 class="font-bold">Simular inbound</h2>
+      <p class="mt-1 text-sm text-slate-600">Seleciona a instance e envia um texto inbound.</p>
 
-      <form class="mt-4 space-y-3" method="post" action="{{ simulate_action }}">
-        <div>
-          <label class="text-sm text-slate-600">Instance</label>
-          <select name="instance" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200">
-            {% for i in instances %}
-              <option value="{{ i }}">{{ i }}</option>
-            {% endfor %}
-          </select>
+      {% if instances and instances|length > 0 %}
+        <form class="mt-4 space-y-3" method="post" action="{{ simulate_action }}">
+          <div>
+            <label class="text-sm text-slate-600">Instance</label>
+            <select name="instance"
+                    class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
+                    required>
+              {% for i in instances %}
+                <option value="{{ i }}">{{ i }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div>
+            <label class="text-sm text-slate-600">from_number</label>
+            <input name="from_number"
+                   value="{{ default_from_number }}"
+                   class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
+                   placeholder="5531999999999"
+                   required>
+          </div>
+
+          <div>
+            <label class="text-sm text-slate-600">Texto</label>
+            <textarea name="text"
+                      rows="4"
+                      class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-200"
+                      placeholder="Oi"
+                      required>{{ default_text }}</textarea>
+          </div>
+
+          <button class="w-full h-11 rounded-2xl bg-slate-900 text-white font-semibold hover:bg-slate-800">
+            Enviar
+          </button>
+        </form>
+      {% else %}
+        <div class="mt-4">
+          {% set message = "Nenhuma instance encontrada. Crie um agente primeiro em Agentes." %}
+          {% include "partials/empty.html" %}
         </div>
-
-        <div>
-          <label class="text-sm text-slate-600">from_number</label>
-          <input name="from_number" value="{{ default_from_number }}" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200">
-        </div>
-
-        <div>
-          <label class="text-sm text-slate-600">Texto</label>
-          <textarea name="text" rows="4" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="Oi">{{ default_text }}</textarea>
-        </div>
-
-        <button class="w-full h-11 rounded-2xl bg-slate-900 text-white font-semibold hover:bg-slate-800">
-          Enviar
-        </button>
-      </form>
+      {% endif %}
     </div>
 
     <div class="bg-white rounded-2xl shadow-soft p-5">
