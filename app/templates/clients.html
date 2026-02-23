@@ -2,78 +2,73 @@
 {% block title %}Clients{% endblock %}
 
 {% block content %}
-  <div class="flex items-start justify-between gap-4 mb-6">
+  <div class="flex items-start justify-between gap-4 flex-col md:flex-row">
     <div>
-      <h1 class="text-2xl font-semibold">Clients</h1>
-      <p class="text-sm text-slate-600 mt-1">Cadastrar e listar tenants (clientes).</p>
+      <h1 class="text-2xl font-bold">Clients</h1>
+      <p class="text-sm text-slate-600">Gerencie os clientes do SaaS.</p>
     </div>
   </div>
 
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-    <div class="card p-4">
-      <div class="text-sm font-semibold">Criar Client</div>
-      <div class="text-xs text-slate-500 mt-1">Cadastro rápido (DEV)</div>
-
+  <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="bg-white rounded-2xl shadow-soft p-5">
+      <h2 class="font-bold">Criar client</h2>
       <form class="mt-4 space-y-3" method="post" action="{{ create_client_action }}">
         <div>
-          <div class="label">Nome</div>
-          <input class="input" name="name" placeholder="Ex: client_default" required />
+          <label class="text-sm text-slate-600">Nome</label>
+          <input name="name" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Ex: Loja BH" required>
         </div>
-
         <div>
-          <div class="label">Plano</div>
-          <input class="input" name="plan" placeholder="Ex: dev / basic / pro" value="dev" />
+          <label class="text-sm text-slate-600">Plano</label>
+          <select name="plan" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200">
+            <option value="basic">basic</option>
+            <option value="pro">pro</option>
+            <option value="enterprise">enterprise</option>
+          </select>
         </div>
-
-        <button class="btn btn-primary w-full" type="submit">Criar</button>
-
-        <div class="text-xs text-slate-500">
-          Endpoint: <span class="code">{{ create_client_action }}</span>
+        <div>
+          <label class="text-sm text-slate-600">Client ID (opcional)</label>
+          <input name="client_id" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200" placeholder="deixe vazio para gerar">
         </div>
+        <button class="w-full h-11 rounded-2xl bg-slate-900 text-white font-semibold hover:bg-slate-800">
+          Criar
+        </button>
       </form>
     </div>
 
-    <div class="card p-4 lg:col-span-2">
+    <div class="lg:col-span-2 bg-white rounded-2xl shadow-soft p-5">
       <div class="flex items-center justify-between">
-        <div>
-          <div class="text-sm font-semibold">Lista de Clients</div>
-          <div class="text-xs text-slate-500 mt-0.5">Total: {{ clients|length if clients else 0 }}</div>
-        </div>
+        <h2 class="font-bold">Lista</h2>
+        <div class="text-sm text-slate-500">{{ clients|length }} itens</div>
       </div>
 
       <div class="mt-4 overflow-x-auto">
-        {% if clients and clients|length > 0 %}
-          <table class="table">
-            <thead>
+        <table class="min-w-full text-sm">
+          <thead class="text-slate-500">
+            <tr class="border-b">
+              <th class="text-left py-3 pr-4 font-semibold">Nome</th>
+              <th class="text-left py-3 pr-4 font-semibold">ID</th>
+              <th class="text-left py-3 pr-4 font-semibold">Plano</th>
+              <th class="text-left py-3 pr-4 font-semibold">Criado</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+            {% for c in clients %}
               <tr>
-                <th class="th">ID</th>
-                <th class="th">Nome</th>
-                <th class="th">Plano</th>
-                <th class="th">Criado em</th>
+                <td class="py-3 pr-4 font-semibold">{{ c.name }}</td>
+                <td class="py-3 pr-4 font-mono text-xs">{{ c.id }}</td>
+                <td class="py-3 pr-4">
+                  <span class="inline-flex px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                    {{ c.plan }}
+                  </span>
+                </td>
+                <td class="py-3 pr-4 text-slate-600">{{ c.created_at or "-" }}</td>
               </tr>
-            </thead>
-            <tbody>
-              {% for c in clients %}
-                <tr>
-                  <td class="td font-mono text-xs">{{ c.id }}</td>
-                  <td class="td">
-                    <div class="font-medium">{{ c.name }}</div>
-                  </td>
-                  <td class="td">
-                    {% if c.plan %}
-                      <span class="badge badge-muted">{{ c.plan }}</span>
-                    {% else %}
-                      <span class="badge badge-muted">—</span>
-                    {% endif %}
-                  </td>
-                  <td class="td text-slate-600">{{ c.created_at or "—" }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        {% else %}
-          {% include "partials/empty.html" with context %}
-        {% endif %}
+            {% endfor %}
+            {% if not clients %}
+              <tr><td colspan="4" class="py-8 text-center text-slate-500">Nenhum client cadastrado.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
