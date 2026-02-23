@@ -70,6 +70,7 @@
                 <th class="text-left py-3 pr-4 font-semibold">Nome</th>
                 <th class="text-left py-3 pr-4 font-semibold">ID</th>
                 <th class="text-left py-3 pr-4 font-semibold">Plano</th>
+                <th class="text-left py-3 pr-4 font-semibold">Portal</th>
                 <th class="text-left py-3 pr-4 font-semibold">Criado</th>
               </tr>
             </thead>
@@ -90,6 +91,23 @@
                   </td>
 
                   <td class="py-3 pr-4 text-slate-600 whitespace-nowrap">{{ c.created_at or "-" }}</td>
+
+                  <td class="py-3 pr-4">
+                    <div class="flex items-center gap-2 flex-wrap">
+                    {% if c.login_token %}
+                        <span class="inline-flex px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">token ✓</span>
+                        <span class="font-mono text-xs text-slate-600">{{ c.login_token }}</span>
+                        {% else %}
+                        <span class="inline-flex px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">sem token</span>
+                        {% endif %}
+
+                        <form method="post" action="{{ url_for('admin_web_clients_token', client_id=c.id) }}">
+                        <button class="h-8 px-3 rounded-xl bg-white border border-slate-200 text-slate-900 text-xs font-semibold hover:bg-slate-50">
+                        Gerar token
+                        </button>
+                        </form>
+                      </div>
+                    </td>         
                 </tr>
               {% endfor %}
             </tbody>
