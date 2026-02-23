@@ -4,6 +4,7 @@ import logging
 
 import httpx
 from fastapi import FastAPI, Request
+from app.agent_push import router as agent_push_router
 from fastapi.responses import Response
 from app.portal_web import router as portal_router
 from .admin_web import router as admin_web_router
@@ -66,6 +67,7 @@ evo = EvolutionClient()
 store = MemoryStore()
 rl = RateLimiter(max_events=10, window_seconds=12)
 
+app.include_router(agent_push_router)
 app.include_router(admin_web_router)
 app.include_router(portal_router)
 app.include_router(admin_router)
