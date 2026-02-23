@@ -70,36 +70,30 @@ class Agent(Base):
     - Um Agent geralmente corresponde a 1 "instance" na Evolution.
     - A "instance" precisa ser UNIQUE para rotear corretamente: instance -> agent.
     """
+
+from sqlalchemy import Column, Text, DateTime
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.sql import func
+
+class Agent(Base):
     __tablename__ = "agents"
 
-    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    id = Column(Text, primary_key=True)
+    client_id = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
+    instance = Column(Text, nullable=False, unique=True)
 
-    client_id: Mapped[str] = mapped_column(
-        Text,
-        ForeignKey("clients.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    evolution_base_url = Column(Text, nullable=True)
+    api_key = Column(Text, nullable=True)
 
-    name: Mapped[str] = mapped_column(Text, nullable=False)
+    status = Column(Text, nullable=True)
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now())
 
-    # Instance do Evolution (chave de roteamento no webhook)
-    instance: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
-
-    # Campos opcionais (caso cada agente tenha base_url/api_key própria)
-    evolution_base_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    # Status administrativo do agente/instância
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
-    last_seen_at: Mapped[Optional[object]] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    created_at: Mapped[object] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-
+    # ✅ REGRAS POR AGENTE (ESSENCIAL)
+    rules_json = Column(JSONB, nullable=False, server_default="{}")
+    rules_updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    
     # Relationship: Agent -> Client (N:1)
     client: Mapped["Client"] = relationship("Client", back_populates="agents")
 
