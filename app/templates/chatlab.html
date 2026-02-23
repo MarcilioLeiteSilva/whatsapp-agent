@@ -1,165 +1,87 @@
 {% extends "base.html" %}
-{% block title %}Chat Lab{% endblock %}
+{% block title %}ChatLab{% endblock %}
 
 {% block content %}
-<div class="flex items-center justify-between">
   <div>
-    <h1 class="text-xl font-semibold">Chat Lab</h1>
-    <p class="text-sm text-slate-600 mt-1">
-      Simulador visual (tipo WhatsApp) para testar regras, múltiplos agentes e múltiplos contatos sem Evolution.
-    </p>
+    <h1 class="text-2xl font-bold">ChatLab</h1>
+    <p class="text-sm text-slate-600">Testa rules por agent sem enviar para a Evolution.</p>
   </div>
 
-  <div class="flex gap-2">
-    <button class="btn" onclick="addPhone()">+ Adicionar tela</button>
-    <a class="btn" href="{{ url_for('admin_web_simulator') }}">Abrir Simulator (service)</a>
+  <div class="mt-6 bg-white rounded-2xl shadow-soft p-5">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div>
+        <label class="text-sm text-slate-600">Instance</label>
+        <select id="instance" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200">
+          {% for i in instances %}
+            <option value="{{ i }}">{{ i }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="text-sm text-slate-600">from_number</label>
+        <input id="from_number" value="5531999999999" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200">
+      </div>
+      <div>
+        <label class="text-sm text-slate-600">Mensagem</label>
+        <input id="text" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Oi">
+      </div>
+    </div>
+
+    <div class="mt-4 flex gap-2">
+      <button id="send" class="h-11 px-4 rounded-2xl bg-slate-900 text-white font-semibold hover:bg-slate-800">
+        Enviar
+      </button>
+      <button id="clear" class="h-11 px-4 rounded-2xl bg-white border border-slate-200 text-slate-900 font-semibold hover:bg-slate-50">
+        Limpar
+      </button>
+    </div>
+
+    <div class="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+        <div class="text-xs text-slate-500">Resposta</div>
+        <pre id="reply" class="mt-2 text-sm whitespace-pre-wrap break-words">—</pre>
+      </div>
+      <div class="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+        <div class="text-xs text-slate-500">State</div>
+        <pre id="state" class="mt-2 text-sm whitespace-pre-wrap break-words">—</pre>
+      </div>
+    </div>
   </div>
-</div>
 
-<div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6" id="phones"></div>
+  <script>
+    const sendUrl = "{{ send_url }}";
 
-<script>
-  const SEND_URL = "/admin/web/chatlab/send";
-  const INSTANCES = {{ instances|tojson }};
-  const MAX_PHONES = 4;
+    function $(id){ return document.getElementById(id); }
 
-  function phoneTemplate(idx) {
-    const defaultInstance = INSTANCES[0] || "";
-    const defaultFrom = idx === 1 ? "5531999999999" : (idx === 2 ? "5531888888888" : "5531777777777");
+    $("send").addEventListener("click", async () => {
+      const payload = {
+        instance: $("instance").value,
+        from_number: $("from_number").value,
+        text: $("text").value
+      };
 
-    return `
-      <div class="card p-4">
-        <div class="flex items-center justify-between gap-2">
-          <div class="flex items-center gap-2">
-            <div class="text-sm font-semibold">Tela ${idx}</div>
-            <span class="text-xs text-slate-500">WhatsApp (simulado)</span>
-          </div>
-          <button class="btn" onclick="resetChat(${idx})">Limpar</button>
-        </div>
+      $("reply").textContent = "enviando...";
+      $("state").textContent = "aguarde...";
 
-        <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
-          <div>
-            <div class="label">Instance (Agent)</div>
-            <select class="input" id="inst_${idx}">
-              ${INSTANCES.map(x => `<option value="${x}" ${x===defaultInstance?'selected':''}>${x}</option>`).join("")}
-            </select>
-          </div>
-          <div class="md:col-span-2">
-            <div class="label">From (contato/funcionário)</div>
-            <input class="input" id="from_${idx}" value="${defaultFrom}" placeholder="5531..." />
-          </div>
-        </div>
-
-        <div class="mt-3 border rounded-2xl bg-slate-50 p-3 h-[420px] overflow-auto" id="log_${idx}">
-          <div class="text-xs text-slate-500">
-            Dica: selecione a instance e envie mensagens para testar o rules.py.
-          </div>
-        </div>
-
-        <div class="mt-3 flex gap-2">
-          <input class="input flex-1" id="text_${idx}" placeholder="Digite uma mensagem..." onkeydown="if(event.key==='Enter'){sendMsg(${idx});}" />
-          <button class="btn btn-primary" onclick="sendMsg(${idx})">Enviar</button>
-        </div>
-
-        <div class="mt-2 text-xs text-slate-500" id="meta_${idx}"></div>
-      </div>
-    `;
-  }
-
-  function bubble(text, side="left") {
-    const align = side === "right" ? "justify-end" : "justify-start";
-    const bg = side === "right" ? "bg-slate-900 text-white" : "bg-white text-slate-900";
-    return `
-      <div class="flex ${align} my-1">
-        <div class="max-w-[78%] ${bg} rounded-2xl px-3 py-2 text-sm shadow-sm">
-          ${escapeHtml(text)}
-        </div>
-      </div>
-    `;
-  }
-
-  function systemLine(text) {
-    return `<div class="text-xs text-slate-500 my-2">${escapeHtml(text)}</div>`;
-  }
-
-  function escapeHtml(s) {
-    return (s || "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
-  function resetChat(idx) {
-    const log = document.getElementById(`log_${idx}`);
-    log.innerHTML = systemLine("Chat limpo.");
-    document.getElementById(`meta_${idx}`).innerText = "";
-  }
-
-  async function sendMsg(idx) {
-    const inst = document.getElementById(`inst_${idx}`).value.trim();
-    const from = document.getElementById(`from_${idx}`).value.trim();
-    const textEl = document.getElementById(`text_${idx}`);
-    const text = textEl.value.trim();
-    if (!inst || !from || !text) return;
-
-    const log = document.getElementById(`log_${idx}`);
-    log.insertAdjacentHTML("beforeend", bubble(text, "right"));
-    log.scrollTop = log.scrollHeight;
-    textEl.value = "";
-
-    const metaEl = document.getElementById(`meta_${idx}`);
-    metaEl.innerText = "Enviando…";
-
-    const t0 = Date.now();
-    try {
-      const r = await fetch(SEND_URL, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({instance: inst, from_number: from, text})
-      });
-      const data = await r.json();
-
-      const ms = Date.now() - t0;
-
-      if (!r.ok || !data.ok) {
-        metaEl.innerText = `Erro (${r.status}): ${data.error || "falha"}`;
-        log.insertAdjacentHTML("beforeend", systemLine(`Erro: ${data.error || "falha ao simular"}`));
-        return;
+      try{
+        const r = await fetch(sendUrl, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify(payload)
+        });
+        const data = await r.json();
+        $("reply").textContent = JSON.stringify({ok:data.ok, paused:data.paused, reply:data.reply}, null, 2);
+        $("state").textContent = JSON.stringify(data.state || {}, null, 2);
+      }catch(e){
+        $("reply").textContent = "erro: " + e;
+        $("state").textContent = "—";
       }
+    });
 
-      if (data.paused) {
-        metaEl.innerText = `OK (${ms}ms) — PAUSADO (handoff)`;
-        log.insertAdjacentHTML("beforeend", systemLine("Bot pausado (handoff). Não há reply."));
-        return;
-      }
-
-      metaEl.innerText = `OK (${ms}ms)`;
-      if (data.reply) {
-        log.insertAdjacentHTML("beforeend", bubble(data.reply, "left"));
-        log.scrollTop = log.scrollHeight;
-      } else {
-        log.insertAdjacentHTML("beforeend", systemLine("Sem resposta (reply vazio)."));
-      }
-    } catch (e) {
-      metaEl.innerText = `Erro: ${e}`;
-      log.insertAdjacentHTML("beforeend", systemLine(`Falha: ${e}`));
-    }
-  }
-
-  let phoneCount = 0;
-  function addPhone() {
-    if (phoneCount >= MAX_PHONES) return;
-    phoneCount += 1;
-
-    const phones = document.getElementById("phones");
-    phones.insertAdjacentHTML("beforeend", phoneTemplate(phoneCount));
-    resetChat(phoneCount);
-  }
-
-  // init: 2 telas
-  addPhone();
-  addPhone();
-</script>
+    $("clear").addEventListener("click", () => {
+      $("reply").textContent = "—";
+      $("state").textContent = "—";
+      $("text").value = "";
+    });
+  </script>
 {% endblock %}
