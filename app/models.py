@@ -1,3 +1,6 @@
+from sqlalchemy import Column, Text, DateTime
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import Column
 from typing import Optional
@@ -70,11 +73,6 @@ class Agent(Base):
     - Um Agent geralmente corresponde a 1 "instance" na Evolution.
     - A "instance" precisa ser UNIQUE para rotear corretamente: instance -> agent.
     """
-
-from sqlalchemy import Column, Text, DateTime
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.sql import func
-
 class Agent(Base):
     __tablename__ = "agents"
 
