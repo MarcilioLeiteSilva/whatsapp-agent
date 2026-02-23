@@ -1,3 +1,5 @@
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column
 from __future__ import annotations
 
 from typing import Optional
@@ -188,3 +190,6 @@ class Lead(Base):
         primaryjoin=foreign(agent_id) == Agent.id,
         viewonly=True,
     )
+
+    rules_json = Column(JSONB, nullable=False, default=dict)
+    rules_updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
