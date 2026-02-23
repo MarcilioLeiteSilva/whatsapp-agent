@@ -2,85 +2,74 @@
 {% block title %}Leads{% endblock %}
 
 {% block content %}
-  <div class="flex items-start justify-between gap-4 mb-6">
+  <div class="flex items-start justify-between gap-4 flex-col md:flex-row">
     <div>
-      <h1 class="text-2xl font-semibold">Leads</h1>
-      <p class="text-sm text-slate-600 mt-1">Lista de leads capturados (DEV).</p>
+      <h1 class="text-2xl font-bold">Leads</h1>
+      <p class="text-sm text-slate-600">Últimos 200 leads (com busca).</p>
     </div>
 
-    <form class="flex items-center gap-2" method="get" action="{{ url_for('admin_web_leads') }}">
-      <input class="input w-64" name="q" placeholder="buscar por número/nome/assunto" value="{{ q or '' }}" />
-      <button class="btn" type="submit">Buscar</button>
+    <form class="flex gap-2 w-full md:w-auto" method="get" action="/admin/web/leads">
+      <input name="q" value="{{ q }}" class="w-full md:w-80 h-10 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
+             placeholder="buscar por nome, telefone, instance..." />
+      <button class="h-10 px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
+        Buscar
+      </button>
     </form>
   </div>
 
-  <div class="card p-4">
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="text-sm font-semibold">Resultados</div>
-        <div class="text-xs text-slate-500 mt-0.5">
-          {% if leads %}{{ leads|length }} lead(s){% else %}0 lead(s){% endif %}
-        </div>
-      </div>
-    </div>
-
-    <div class="mt-4 overflow-x-auto">
-      {% if leads and leads|length > 0 %}
-        <table class="table">
-          <thead>
-            <tr>
-              <th class="th">Created</th>
-              <th class="th">Client</th>
-              <th class="th">Agent</th>
-              <th class="th">Instance</th>
-              <th class="th">From</th>
-              <th class="th">Nome</th>
-              <th class="th">Telefone</th>
-              <th class="th">Assunto</th>
-              <th class="th">Origem</th>
-              <th class="th">Intent</th>
-              <th class="th">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for l in leads %}
-              <tr>
-                <td class="td text-slate-600">{{ l.created_at or "—" }}</td>
-                <td class="td">
-                  <div class="font-medium">{{ l.client_name or l.client_id }}</div>
-                  <div class="text-xs text-slate-500">client_id={{ l.client_id }}</div>
-                </td>
-                <td class="td">
-                  <div class="font-medium">{{ l.agent_name or l.agent_id }}</div>
-                  <div class="text-xs text-slate-500">agent_id={{ l.agent_id }}</div>
-                </td>
-                <td class="td"><span class="code">{{ l.instance or "—" }}</span></td>
-                <td class="td font-mono text-xs">{{ l.from_number or "—" }}</td>
-                <td class="td">{{ l.nome or "—" }}</td>
-                <td class="td">{{ l.telefone or "—" }}</td>
-                <td class="td">{{ l.assunto or "—" }}</td>
-                <td class="td">{{ l.origem or "—" }}</td>
-                <td class="td">
-                  {% if l.intent_detected %}
-                    <span class="badge badge-ok">{{ l.intent_detected }}</span>
-                  {% else %}
-                    <span class="badge badge-muted">—</span>
-                  {% endif %}
-                </td>
-                <td class="td">
-                  {% if l.status %}
-                    <span class="badge badge-muted">{{ l.status }}</span>
-                  {% else %}
-                    <span class="badge badge-muted">—</span>
-                  {% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        {% include "partials/empty.html" with context %}
-      {% endif %}
-    </div>
+  <div class="mt-6 bg-white rounded-2xl shadow-soft p-5 overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead class="text-slate-500">
+        <tr class="border-b">
+          <th class="text-left py-3 pr-4 font-semibold">Data</th>
+          <th class="text-left py-3 pr-4 font-semibold">Cliente</th>
+          <th class="text-left py-3 pr-4 font-semibold">Agente</th>
+          <th class="text-left py-3 pr-4 font-semibold">Instance</th>
+          <th class="text-left py-3 pr-4 font-semibold">De</th>
+          <th class="text-left py-3 pr-4 font-semibold">Nome</th>
+          <th class="text-left py-3 pr-4 font-semibold">Telefone</th>
+          <th class="text-left py-3 pr-4 font-semibold">Assunto</th>
+          <th class="text-left py-3 pr-4 font-semibold">Intent</th>
+          <th class="text-left py-3 pr-4 font-semibold">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for l in leads %}
+          <tr>
+            <td class="py-3 pr-4 text-slate-600">{{ l.created_at or "-" }}</td>
+            <td class="py-3 pr-4">
+              <div class="font-semibold">{{ l.client_name or l.client_id }}</div>
+              <div class="text-xs text-slate-500 font-mono">{{ l.client_id }}</div>
+            </td>
+            <td class="py-3 pr-4">
+              <div class="font-semibold">{{ l.agent_name or (l.agent_id or "-") }}</div>
+              {% if l.agent_id %}<div class="text-xs text-slate-500 font-mono">{{ l.agent_id }}</div>{% endif %}
+            </td>
+            <td class="py-3 pr-4 font-mono text-xs">{{ l.instance }}</td>
+            <td class="py-3 pr-4 font-mono text-xs">{{ l.from_number }}</td>
+            <td class="py-3 pr-4">{{ l.nome or "-" }}</td>
+            <td class="py-3 pr-4">{{ l.telefone or "-" }}</td>
+            <td class="py-3 pr-4">{{ l.assunto or "-" }}</td>
+            <td class="py-3 pr-4">
+              {% if l.intent_detected %}
+                <span class="inline-flex px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold">{{ l.intent_detected }}</span>
+              {% else %}
+                <span class="text-xs text-slate-500">-</span>
+              {% endif %}
+            </td>
+            <td class="py-3 pr-4">
+              {% if l.status %}
+                <span class="inline-flex px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">{{ l.status }}</span>
+              {% else %}
+                <span class="text-xs text-slate-500">-</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        {% if not leads %}
+          <tr><td colspan="10" class="py-8 text-center text-slate-500">Nenhum lead encontrado.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
   </div>
 {% endblock %}
