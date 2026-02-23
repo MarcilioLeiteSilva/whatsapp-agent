@@ -744,10 +744,12 @@ async def chatlab_send(req: Request):
         logger.error("CHATLAB_LEAD_CAPTURE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
 
     # Estado (memória curta) – store local do ChatLab
-    state = chatlab_store.get_state(from_number)
+    state_key = f"{agent_id}:{from_number}"
+    state = chatlab_store.get_state(state_key)
 
     # Rodar regras
-    reply = reply_for(from_number, text, state)
+    ctx = {"client_id": client_id, "agent_id": agent_id, "instance": instance}
+    reply = reply_for(from_number, text, state, ctx=ctx)
 
     logger.info(
         "CHATLAB_RULES_REPLY: client_id=%s agent_id=%s instance=%s from=%s reply=%r step=%s",
