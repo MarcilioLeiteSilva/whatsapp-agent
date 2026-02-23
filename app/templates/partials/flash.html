@@ -1,17 +1,17 @@
-{% if flash %}
-  <div class="mb-4">
+{% if flash and flash.message %}
+  <div class="mb-5">
     {% set kind = flash.kind or "info" %}
     {% if kind == "success" %}
-      <div class="card p-4 border-emerald-200 bg-emerald-50 text-emerald-800">
-        <div class="text-sm font-medium">{{ flash.message }}</div>
+      <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800 text-sm">
+        ✅ {{ flash.message }}
       </div>
     {% elif kind == "error" %}
-      <div class="card p-4 border-rose-200 bg-rose-50 text-rose-800">
-        <div class="text-sm font-medium">{{ flash.message }}</div>
+      <div class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-800 text-sm">
+        ❌ {{ flash.message }}
       </div>
     {% else %}
-      <div class="card p-4">
-        <div class="text-sm font-medium">{{ flash.message }}</div>
+      <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-700 text-sm shadow-soft">
+        ℹ️ {{ flash.message }}
       </div>
     {% endif %}
   </div>
