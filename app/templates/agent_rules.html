@@ -11,44 +11,177 @@
     </div>
 
     <div class="flex gap-2">
-      <a href="{{ back_url }}" class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
+      <a href="{{ back_url }}"
+         class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
         Voltar
       </a>
     </div>
   </div>
 
   <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <!-- Editor -->
     <div class="lg:col-span-2 bg-white rounded-2xl shadow-soft p-5">
-      <h2 class="font-bold">rules_json (JSONB)</h2>
-      <p class="mt-1 text-sm text-slate-600">Cole/edite o JSON e salve. O cache será invalidado automaticamente.</p>
+      <div class="flex items-center justify-between gap-3 flex-col sm:flex-row">
+        <div>
+          <h2 class="font-bold">rules_json (JSONB)</h2>
+          <p class="mt-1 text-sm text-slate-600">Cole/edite o JSON e salve. O cache será invalidado automaticamente.</p>
+        </div>
 
-      <form class="mt-4 space-y-3" method="post" action="{{ save_action }}">
-        <textarea name="rules_text" rows="22"
+        <div class="flex items-center gap-2">
+          <span id="jsonStatus" class="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+            —
+          </span>
+        </div>
+      </div>
+
+      <form id="rulesForm" class="mt-4 space-y-3" method="post" action="{{ save_action }}">
+        <textarea id="rulesText" name="rules_text" rows="22"
                   class="w-full rounded-2xl border border-slate-200 px-4 py-3 font-mono text-xs outline-none focus:ring-2 focus:ring-indigo-200">{{ rules_text }}</textarea>
 
-        <div class="flex gap-2">
-          <button class="h-11 px-4 rounded-2xl bg-slate-900 text-white font-semibold hover:bg-slate-800">
+        <div class="flex flex-wrap gap-2">
+          <button type="submit"
+                  class="h-11 px-4 rounded-2xl bg-slate-900 text-white font-semibold hover:bg-slate-800">
             Salvar regras
           </button>
+
+          <button type="button" id="formatBtn"
+                  class="h-11 px-4 rounded-2xl bg-white border border-slate-200 text-slate-900 font-semibold hover:bg-slate-50">
+            Formatar JSON
+          </button>
+
+          <button type="button" id="copyBtn"
+                  class="h-11 px-4 rounded-2xl bg-white border border-slate-200 text-slate-900 font-semibold hover:bg-slate-50">
+            Copiar
+          </button>
         </div>
+
+        <div id="jsonError" class="hidden rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-800 text-sm"></div>
       </form>
     </div>
 
+    <!-- Side actions -->
     <div class="bg-white rounded-2xl shadow-soft p-5">
       <h2 class="font-bold">Ações</h2>
       <p class="mt-1 text-sm text-slate-600">Bootstrap rápido e reset.</p>
 
-      <form method="post" action="{{ reset_action }}" class="mt-4">
-        <button class="w-full h-11 rounded-2xl bg-rose-600 text-white font-semibold hover:bg-rose-700">
+      <form id="resetForm" method="post" action="{{ reset_action }}" class="mt-4">
+        <button type="submit"
+                class="w-full h-11 rounded-2xl bg-rose-600 text-white font-semibold hover:bg-rose-700">
           Resetar para template básico
         </button>
+        <div class="mt-2 text-xs text-slate-500">
+          Isso sobrescreve as regras atuais.
+        </div>
       </form>
 
       <div class="mt-6 p-4 rounded-2xl bg-slate-50 border border-slate-200">
         <div class="text-xs text-slate-500">Agente</div>
-        <div class="mt-1 text-sm font-semibold">{{ agent.id }}</div>
+        <div class="mt-1 text-sm font-semibold font-mono break-words">{{ agent.id }}</div>
         <div class="mt-1 text-xs text-slate-600">status: {{ agent.status }}</div>
+        <div class="mt-1 text-xs text-slate-600">client_id: <span class="font-mono">{{ agent.client_id }}</span></div>
+      </div>
+
+      <div class="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+        <div class="text-xs text-slate-500">Dica</div>
+        <div class="mt-1 text-sm text-slate-700">
+          Use <span class="font-mono text-xs">Formatar JSON</span> antes de salvar para reduzir erros.
+        </div>
       </div>
     </div>
   </div>
+
+  <script>
+    function $(id){ return document.getElementById(id); }
+
+    const rulesEl = $("rulesText");
+    const statusEl = $("jsonStatus");
+    const errEl = $("jsonError");
+
+    function setStatus(ok, msg){
+      statusEl.className = "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold " + (ok
+        ? "bg-emerald-50 text-emerald-700"
+        : "bg-rose-50 text-rose-700");
+      statusEl.textContent = msg;
+    }
+
+    function showError(msg){
+      if(!msg){
+        errEl.classList.add("hidden");
+        errEl.textContent = "";
+        return;
+      }
+      errEl.classList.remove("hidden");
+      errEl.textContent = msg;
+    }
+
+    function validateJson(){
+      const txt = (rulesEl.value || "").trim();
+      if(!txt){
+        setStatus(false, "JSON vazio");
+        showError("Cole um JSON válido (não pode vazio).");
+        return false;
+      }
+      try{
+        const parsed = JSON.parse(txt);
+        if(parsed === null || typeof parsed !== "object" || Array.isArray(parsed)){
+          setStatus(false, "Raiz inválida");
+          showError("O JSON raiz deve ser um objeto (dict).");
+          return false;
+        }
+        setStatus(true, "JSON válido");
+        showError("");
+        return true;
+      }catch(e){
+        setStatus(false, "JSON inválido");
+        showError(String(e));
+        return false;
+      }
+    }
+
+    // live validation
+    rulesEl.addEventListener("input", () => validateJson());
+    validateJson();
+
+    // format button
+    $("formatBtn").addEventListener("click", () => {
+      try{
+        const parsed = JSON.parse(rulesEl.value);
+        rulesEl.value = JSON.stringify(parsed, null, 2);
+        validateJson();
+      }catch(e){
+        validateJson();
+      }
+    });
+
+    // copy button
+    $("copyBtn").addEventListener("click", async () => {
+      try{
+        await navigator.clipboard.writeText(rulesEl.value || "");
+        statusEl.className = "inline-flex items-center px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold";
+        statusEl.textContent = "Copiado!";
+        setTimeout(() => validateJson(), 900);
+      }catch(e){
+        // fallback: select
+        rulesEl.focus();
+        rulesEl.select();
+        document.execCommand("copy");
+        statusEl.className = "inline-flex items-center px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold";
+        statusEl.textContent = "Copiado!";
+        setTimeout(() => validateJson(), 900);
+      }
+    });
+
+    // reset confirm
+    $("resetForm").addEventListener("submit", (e) => {
+      const ok = confirm("Tem certeza? Isso vai resetar as regras para o template básico.");
+      if(!ok) e.preventDefault();
+    });
+
+    // block submit if invalid
+    $("rulesForm").addEventListener("submit", (e) => {
+      if(!validateJson()){
+        e.preventDefault();
+      }
+    });
+  </script>
 {% endblock %}
