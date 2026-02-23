@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{% block title %}Admin{% endblock %}</title>
+
+  <!-- Tailwind via CDN (rápido p/ MVP) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Montserrat -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ["Montserrat", "ui-sans-serif", "system-ui"] },
+          boxShadow: { soft: "0 8px 24px rgba(15, 23, 42, 0.08)" }
+        }
+      }
+    }
+  </script>
+</head>
+
+<body class="bg-slate-50 text-slate-900 font-sans">
+  <div class="min-h-screen flex">
+
+    <!-- Sidebar -->
+    <aside class="w-72 bg-slate-900 text-slate-100 hidden md:flex flex-col">
+      <div class="px-6 py-6 border-b border-white/10">
+        <div class="flex items-center gap-3">
+          <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-cyan-400"></div>
+          <div>
+            <div class="text-sm font-semibold leading-tight">WhatsApp SaaS</div>
+            <div class="text-xs text-slate-300">Multiagente • Multi-tenant</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="px-3 py-4 space-y-1">
+        <a href="/admin" class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10 {% if active=='dashboard' %}bg-white/10{% endif %}">
+          <span class="text-sm font-medium">Dashboard</span>
+        </a>
+        <a href="/admin/agents" class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10 {% if active=='agents' %}bg-white/10{% endif %}">
+          <span class="text-sm font-medium">Agentes</span>
+        </a>
+        <a href="/admin/leads" class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10 {% if active=='leads' %}bg-white/10{% endif %}">
+          <span class="text-sm font-medium">Leads</span>
+        </a>
+
+        <div class="pt-4 mt-4 border-t border-white/10">
+          <a href="/admin/settings" class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10 {% if active=='settings' %}bg-white/10{% endif %}">
+            <span class="text-sm font-medium">Configurações</span>
+          </a>
+        </div>
+      </nav>
+
+      <div class="mt-auto px-6 py-4 border-t border-white/10">
+        <div class="text-xs text-slate-300">vSaaS • rules_json por agent</div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 flex flex-col">
+
+      <!-- Topbar -->
+      <header class="bg-gradient-to-r from-indigo-600 to-cyan-500">
+        <div class="px-4 md:px-8 py-4 flex items-center gap-3">
+          <button class="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-xl bg-white/10 text-white">
+            ☰
+          </button>
+
+          <!-- Search -->
+          <div class="flex-1">
+            <div class="relative">
+              <input
+                class="w-full h-11 rounded-2xl bg-white/95 px-4 pr-10 text-sm outline-none ring-0 focus:bg-white"
+                placeholder="Buscar agente, lead, número..."
+              />
+              <div class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">⌕</div>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center gap-2">
+            <button class="h-11 px-4 rounded-2xl bg-white/10 text-white text-sm font-medium hover:bg-white/15">
+              Notificações
+            </button>
+            <div class="h-11 w-11 rounded-2xl bg-white/20"></div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Content -->
+      <section class="px-4 md:px-8 py-6">
+        {% block content %}{% endblock %}
+      </section>
+    </main>
+  </div>
+</body>
+</html>
