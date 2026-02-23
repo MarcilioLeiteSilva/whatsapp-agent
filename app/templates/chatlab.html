@@ -2,86 +2,156 @@
 {% block title %}ChatLab{% endblock %}
 
 {% block content %}
-  <div>
-    <h1 class="text-2xl font-bold">ChatLab</h1>
-    <p class="text-sm text-slate-600">Testa rules por agent sem enviar para a Evolution.</p>
+  <div class="flex items-start justify-between gap-4 flex-col md:flex-row">
+    <div>
+      <h1 class="text-2xl font-bold">ChatLab</h1>
+      <p class="text-sm text-slate-600">Testa rules por agent sem enviar para a Evolution.</p>
+    </div>
+
+    <div class="flex gap-2">
+      <a href="{{ url_for('admin_web_agents') }}"
+         class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
+        Ver agentes
+      </a>
+      <a href="{{ url_for('admin_web_simulator') }}"
+         class="h-10 inline-flex items-center px-4 rounded-xl bg-white shadow-soft text-slate-900 text-sm font-semibold hover:bg-slate-50">
+        Abrir Simulator
+      </a>
+    </div>
   </div>
 
   <div class="mt-6 bg-white rounded-2xl shadow-soft p-5">
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-      <div>
-        <label class="text-sm text-slate-600">Instance</label>
-        <select id="instance" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200">
-          {% for i in instances %}
-            <option value="{{ i }}">{{ i }}</option>
-          {% endfor %}
-        </select>
+    {% if instances and instances|length > 0 %}
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div>
+          <label class="text-sm text-slate-600">Instance</label>
+          <select id="instance"
+                  class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200">
+            {% for i in instances %}
+              <option value="{{ i }}">{{ i }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label class="text-sm text-slate-600">from_number</label>
+          <input id="from_number"
+                 value="5531999999999"
+                 class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
+                 placeholder="5531999999999">
+        </div>
+
+        <div>
+          <label class="text-sm text-slate-600">Mensagem</label>
+          <input id="text"
+                 class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200"
+                 placeholder="Oi">
+        </div>
       </div>
-      <div>
-        <label class="text-sm text-slate-600">from_number</label>
-        <input id="from_number" value="5531999999999" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200">
+
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        <button id="send"
+                class="h-11 px-4 rounded-2xl bg-slate-900 text-white font-semibold hover:bg-slate-800">
+          Enviar
+        </button>
+
+        <button id="clear"
+                class="h-11 px-4 rounded-2xl bg-white border border-slate-200 text-slate-900 font-semibold hover:bg-slate-50">
+          Limpar
+        </button>
+
+        <div id="hint" class="text-sm text-slate-500 md:ml-auto">
+          Dica: aperte <span class="font-mono text-xs">Enter</span> para enviar.
+        </div>
       </div>
-      <div>
-        <label class="text-sm text-slate-600">Mensagem</label>
-        <input id="text" class="mt-1 w-full h-11 rounded-2xl border border-slate-200 px-4 outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Oi">
+
+      <div class="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+          <div class="flex items-center justify-between">
+            <div class="text-xs text-slate-500">Resposta</div>
+            <div id="pausedBadge" class="hidden">
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">
+                paused
+              </span>
+            </div>
+          </div>
+          <pre id="reply" class="mt-2 text-sm whitespace-pre-wrap break-words">—</pre>
+        </div>
+
+        <div class="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+          <div class="text-xs text-slate-500">State</div>
+          <pre id="state" class="mt-2 text-sm whitespace-pre-wrap break-words">—</pre>
+        </div>
       </div>
-    </div>
 
-    <div class="mt-4 flex gap-2">
-      <button id="send" class="h-11 px-4 rounded-2xl bg-slate-900 text-white font-semibold hover:bg-slate-800">
-        Enviar
-      </button>
-      <button id="clear" class="h-11 px-4 rounded-2xl bg-white border border-slate-200 text-slate-900 font-semibold hover:bg-slate-50">
-        Limpar
-      </button>
-    </div>
+      <script>
+        const sendUrl = "{{ send_url }}";
+        function $(id){ return document.getElementById(id); }
 
-    <div class="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <div class="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-        <div class="text-xs text-slate-500">Resposta</div>
-        <pre id="reply" class="mt-2 text-sm whitespace-pre-wrap break-words">—</pre>
-      </div>
-      <div class="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-        <div class="text-xs text-slate-500">State</div>
-        <pre id="state" class="mt-2 text-sm whitespace-pre-wrap break-words">—</pre>
-      </div>
-    </div>
-  </div>
+        function setPaused(on){
+          const el = $("pausedBadge");
+          if(!el) return;
+          el.classList.toggle("hidden", !on);
+        }
 
-  <script>
-    const sendUrl = "{{ send_url }}";
+        async function doSend(){
+          const instance = ($("instance").value || "").trim();
+          const from = ($("from_number").value || "").trim();
+          const text = ($("text").value || "").trim();
 
-    function $(id){ return document.getElementById(id); }
+          if(!instance || !from || !text){
+            $("reply").textContent = "erro: preencha instance, from_number e mensagem.";
+            $("state").textContent = "—";
+            setPaused(false);
+            return;
+          }
 
-    $("send").addEventListener("click", async () => {
-      const payload = {
-        instance: $("instance").value,
-        from_number: $("from_number").value,
-        text: $("text").value
-      };
+          $("reply").textContent = "enviando...";
+          $("state").textContent = "aguarde...";
+          setPaused(false);
 
-      $("reply").textContent = "enviando...";
-      $("state").textContent = "aguarde...";
+          try{
+            const r = await fetch(sendUrl, {
+              method: "POST",
+              headers: {"Content-Type":"application/json"},
+              body: JSON.stringify({ instance, from_number: from, text })
+            });
 
-      try{
-        const r = await fetch(sendUrl, {
-          method: "POST",
-          headers: {"Content-Type":"application/json"},
-          body: JSON.stringify(payload)
+            const data = await r.json();
+            setPaused(!!data.paused);
+
+            $("reply").textContent = JSON.stringify(
+              { ok: data.ok, paused: data.paused, reply: data.reply },
+              null,
+              2
+            );
+            $("state").textContent = JSON.stringify(data.state || {}, null, 2);
+          }catch(e){
+            $("reply").textContent = "erro: " + e;
+            $("state").textContent = "—";
+            setPaused(false);
+          }
+        }
+
+        $("send").addEventListener("click", doSend);
+
+        $("text").addEventListener("keydown", (e) => {
+          if(e.key === "Enter"){
+            e.preventDefault();
+            doSend();
+          }
         });
-        const data = await r.json();
-        $("reply").textContent = JSON.stringify({ok:data.ok, paused:data.paused, reply:data.reply}, null, 2);
-        $("state").textContent = JSON.stringify(data.state || {}, null, 2);
-      }catch(e){
-        $("reply").textContent = "erro: " + e;
-        $("state").textContent = "—";
-      }
-    });
 
-    $("clear").addEventListener("click", () => {
-      $("reply").textContent = "—";
-      $("state").textContent = "—";
-      $("text").value = "";
-    });
-  </script>
+        $("clear").addEventListener("click", () => {
+          $("reply").textContent = "—";
+          $("state").textContent = "—";
+          $("text").value = "";
+          setPaused(false);
+        });
+      </script>
+    {% else %}
+      {% set message = "Nenhuma instance encontrada. Crie um agente primeiro em Agentes." %}
+      {% include "partials/empty.html" %}
+    {% endif %}
+  </div>
 {% endblock %}
