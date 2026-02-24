@@ -4,12 +4,19 @@ import logging
 
 import httpx
 from fastapi import FastAPI, Request
-from app.agent_push import router as agent_push_router
 from fastapi.responses import Response
-from app.portal_web import router as portal_router
-from .admin_web import router as admin_web_router
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-from .models import Client, Agent, Lead
+
+from .admin_web import router as admin_web_router
+from .portal_web import router as portal_router
+from .admin import router as admin_router
+
+# agent_push é opcional (não pode derrubar o app se o módulo não existir)
+try:
+    from .agent_push import router as agent_push_router  # type: ignore
+except Exception:
+    agent_push_router = None
+
 from .evolution import EvolutionClient
 from .store import MemoryStore
 from .rules import reply_for, detect_intents
@@ -34,7 +41,6 @@ from .metrics import (
 )
 
 from .ratelimit import RateLimiter
-from .admin import router as admin_router
 
 # (Opcional) DEV auto-create tables
 try:
@@ -67,7 +73,9 @@ evo = EvolutionClient()
 store = MemoryStore()
 rl = RateLimiter(max_events=10, window_seconds=12)
 
-app.include_router(agent_push_router)
+# Routers
+if agent_push_router:
+    app.include_router(agent_push_router)
 app.include_router(admin_web_router)
 app.include_router(portal_router)
 app.include_router(admin_router)
@@ -129,10 +137,6 @@ def extract_payload(payload: dict):
     """
     Normaliza payload do webhook da Evolution (e variações) para:
     instance, message_id, from_number, text, from_me, is_group, event, status
-
-    Observação:
-    - A Evolution pode enviar eventos com "data.messages[0]" ou com "data.key".
-    - Também pode chegar "status" junto do evento.
     """
     instance = (payload.get("instance") or payload.get("instanceId") or "").strip()
 
@@ -195,10 +199,6 @@ async def metrics():
 async def status():
     """
     Endpoint de diagnóstico rápido.
-    - DB check: usa get_last_leads() para validar conexão/queries.
-    - Evolution check:
-        1) tenta usar EVOLUTION_BASE_URL (compat)
-        2) se não existir/for inválida, tenta pegar um Agent do DB que tenha evolution_base_url
     """
     # DB check
     db_ok = True
@@ -209,7 +209,7 @@ async def status():
         db_ok = False
         db_err = str(e)
 
-    # Evolution reachability check (tolerante e mais informativo)
+    # Evolution reachability check (tolerante)
     evo_ok = True
     evo_err = None
     try:
@@ -218,7 +218,6 @@ async def status():
         # Se não tem base global, tenta pegar do DB (SaaS mode)
         if not base or not (base.startswith("http://") or base.startswith("https://")):
             try:
-                # Import local para evitar custo/risco de circular import no startup
                 from sqlalchemy import select
                 from .db import SessionLocal
                 from .models import Agent
@@ -233,7 +232,6 @@ async def status():
                 if a and (a.evolution_base_url or "").strip():
                     base = (a.evolution_base_url or "").strip().rstrip("/")
             except Exception:
-                # Se falhar a leitura do DB, cai para validação do base original mesmo
                 pass
 
         if not (base.startswith("http://") or base.startswith("https://")):
@@ -253,6 +251,7 @@ async def status():
         "evolution_ok": evo_ok,
         "evolution_err": evo_err,
         "allow_simulator": ALLOW_SIMULATOR,
+        "agent_push_loaded": bool(agent_push_router),
     }
 
 
@@ -261,18 +260,6 @@ async def status():
 # -----------------------------------------------------------------------------
 @app.post("/webhook")
 async def webhook(req: Request):
-    """
-    Webhook da Evolution: recebe eventos (messages.upsert, etc).
-
-    Estratégia:
-    1) Parse do payload e normalização.
-    2) Resolver agente via instance (multi-tenant/multi-agente).
-    3) Filtrar ruído (ACK/status sem texto, updates, fromMe, grupos).
-    4) Dedup por message_id + rate-limit por número.
-    5) Captura automática (primeiro contato e intenção).
-    6) Regras do bot (rules.py) + envio de resposta.
-    7) Persistência do lead quando step == lead_captured (uma vez só).
-    """
     start = time.time()
     WEBHOOK_RECEIVED.inc()
 
@@ -285,9 +272,7 @@ async def webhook(req: Request):
 
     instance, message_id, number, text, from_me, is_group, event, status = extract_payload(payload)
 
-    # -------------------------------------------------------------------------
-    # Multi-tenant routing: instance -> agent (client_id, agent_id)
-    # -------------------------------------------------------------------------
+    # Multi-tenant routing: instance -> agent
     agent = get_agent_by_instance(instance)
     if not agent:
         logger.warning("UNKNOWN_INSTANCE: instance=%s", instance)
@@ -298,59 +283,39 @@ async def webhook(req: Request):
     client_id = agent.client_id
     agent_id = agent.id
 
-    # Sempre logar contexto do agente (multiagente)
     logger.info(
         "CTX: client_id=%s agent_id=%s instance=%s message_id=%s from=%s event=%s status=%s text=%r",
-        client_id,
-        agent_id,
-        instance,
-        message_id,
-        number,
-        event,
-        status,
-        text,
+        client_id, agent_id, instance, message_id, number, event, status, text,
     )
 
-    # -------------------------------------------------------------------------
     # Filtrar ruído (ACK/status/update)
-    # - Só ignoramos ACK/status quando NÃO há texto.
-    # -------------------------------------------------------------------------
     if "update" in event:
         WEBHOOK_IGNORED.labels("update").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "update"}
 
     if status in {
-        "ACK",
-        "READ",
-        "DELIVERED",
-        "DELIVERED_TO_DEVICE",
-        "SERVER_ACK",
-        "DELIVERY_ACK",
+        "ACK", "READ", "DELIVERED", "DELIVERED_TO_DEVICE", "SERVER_ACK", "DELIVERY_ACK",
     } and not text:
         WEBHOOK_IGNORED.labels("ack/status_no_text").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "ack/status_no_text"}
 
-    # Ignora mensagens enviadas por nós ou em grupo
     if from_me or is_group:
         WEBHOOK_IGNORED.labels("from_me_or_group").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "from_me/group"}
 
-    # Dedup só se tiver id
     if message_id and store.seen(message_id):
         WEBHOOK_IGNORED.labels("dedup").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "dedup"}
 
-    # Se não conseguiu extrair número/texto, não segue
     if not number or not text:
         WEBHOOK_IGNORED.labels("missing_number_or_text").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "missing_number_or_text"}
 
-    # Rate limit por número (proteção anti-spam)
     if not rl.allow(number):
         WEBHOOK_IGNORED.labels("rate_limited").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
@@ -358,43 +323,26 @@ async def webhook(req: Request):
 
     MSG_PROCESSED.inc()
 
-    # -------------------------------------------------------------------------
-    # Captura automática:
-    # 1) Primeiro contato
-    # 2) Intenção (lead quente)
-    # -------------------------------------------------------------------------
+    # Captura automática: primeiro contato + intenção
     try:
-        ensure_first_contact(
-            client_id=client_id,
-            agent_id=agent_id,
-            instance=instance,
-            from_number=number,
-        )
+        ensure_first_contact(client_id=client_id, agent_id=agent_id, instance=instance, from_number=number)
         LEAD_FIRST_CONTACT.inc()
 
         intents = detect_intents(text)
         if intents:
-            mark_intent(
-                client_id=client_id,
-                agent_id=agent_id,
-                instance=instance,
-                from_number=number,
-                intents=intents,
-            )
+            mark_intent(client_id=client_id, agent_id=agent_id, instance=instance, from_number=number, intents=intents)
             LEAD_INTENT_MARKED.inc()
     except Exception as e:
         logger.error("LEAD_CAPTURE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
 
-    # Estado da conversa (memória curta)
+    # Estado da conversa
     state_key = f"{agent_id}:{number}"
     state = store.get_state(state_key)
 
     ctx = {"client_id": client_id, "agent_id": agent_id, "instance": instance}
     reply = reply_for(number, text, state, ctx=ctx)
 
-    # -------------------------------------------------------------------------
-    # Comando ADMIN: listar últimos leads
-    # -------------------------------------------------------------------------
+    # ADMIN: #leads
     if (text or "").strip().lower() == "#leads":
         if not ADMIN_NUMBER or number != ADMIN_NUMBER:
             WEBHOOK_IGNORED.labels("admin_unauthorized").inc()
@@ -458,29 +406,19 @@ async def webhook(req: Request):
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True}
 
-    # -------------------------------------------------------------------------
-    # Regras normais do bot (rules.py)
-    # -------------------------------------------------------------------------
-    
+    # Log de reply
     logger.info(
         "RULES_REPLY: client_id=%s agent_id=%s instance=%s from=%s reply=%r step=%s",
-        client_id,
-        agent_id,
-        instance,
-        number,
-        reply,
-        (state or {}).get("step"),
+        client_id, agent_id, instance, number, reply, (state or {}).get("step"),
     )
 
-    # Quando rules.py retorna None, interpretamos como "pausado" (handoff humano)
+    # Pausado/handoff
     if reply is None:
         WEBHOOK_IGNORED.labels("paused").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "paused": True}
 
-    # -------------------------------------------------------------------------
-    # Persistência do lead (uma vez só)
-    # -------------------------------------------------------------------------
+    # Persistência do lead (uma vez)
     try:
         if (
             state.get("step") == "lead_captured"
@@ -508,16 +446,10 @@ async def webhook(req: Request):
     except Exception as e:
         logger.error("LEAD_SAVE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
 
-    # -------------------------------------------------------------------------
-    # Envio de resposta (SaaS: por agente)
-    # -------------------------------------------------------------------------
+    # Envio de resposta (por agente)
     logger.info(
         "SEND_TEXT: client_id=%s agent_id=%s instance=%s to=%s chars=%s",
-        client_id,
-        agent_id,
-        instance,
-        number,
-        len(reply or ""),
+        client_id, agent_id, instance, number, len(reply or ""),
     )
 
     try:
