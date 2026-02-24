@@ -924,7 +924,8 @@ async def monitor_page(req: Request):
         "active_nav": "monitor",
         "flash": flash,
         "mode": mode,
-        "data_url": _url(req, "admin_web_monitor_data"),
+        "tv_mode": (mode == "tv"),
+        "data_url": "/admin/web/monitor/data",  # recomendo fixo/relativo
     }
     return templates.TemplateResponse("monitor.html", ctx)
 
