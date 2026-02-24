@@ -47,6 +47,9 @@ def _build_ping_url(base_url: str) -> str:
     return f"{base_url}{path}"
 
 
+
+#Inicio check one
+
 async def _check_one(agent: Agent) -> dict:
     """
     Retorna dict com status/latency/error/details
@@ -101,6 +104,8 @@ async def _check_one(agent: Agent) -> dict:
             "details": {"url": url, "exception": str(type(e).__name__)},
         }
 
+
+#Final check one
 
 def _save_check(agent_id: str, result: dict) -> None:
     with SessionLocal() as db:
