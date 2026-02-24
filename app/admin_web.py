@@ -43,7 +43,7 @@ from sqlalchemy import select, func, or_, desc
 from sqlalchemy.exc import IntegrityError
 
 from .db import SessionLocal
-from .models import Client, Agent, Lead, AgentCheck
+from .models import Client, Agent, Lead, AgentCheck, RuleTemplate
 
 from .store import MemoryStore
 from .rules import reply_for, detect_intents
@@ -1078,6 +1078,228 @@ async def monitor_data(req: Request):
         }
     )
 
+
+# -----------------------------------------------------------------------------
+# Rule Templates Library
+# -----------------------------------------------------------------------------
+def _template_to_view(t: RuleTemplate) -> dict:
+    return {
+        "id": getattr(t, "id", None),
+        "name": getattr(t, "name", None),
+        "niche": getattr(t, "niche", None),
+        "kind": getattr(t, "kind", None),
+        "description": getattr(t, "description", None),
+        "created_at": _fmt_dt_br(getattr(t, "created_at", None)),
+        "updated_at": _fmt_dt_br(getattr(t, "updated_at", None)),
+    }
+
+
+@router.get("/templates", name="admin_web_templates")
+async def templates_page(req: Request, q: str = ""):
+    try:
+        _require_admin(req)
+    except PermissionError:
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
+
+    flash = _flash_from_query(req)
+    q = (q or "").strip()
+
+    with SessionLocal() as db:
+        stmt = select(RuleTemplate).order_by(desc(RuleTemplate.updated_at))
+        if q:
+            like = f"%{q}%"
+            stmt = stmt.where(
+                or_(
+                    RuleTemplate.name.ilike(like),
+                    RuleTemplate.niche.ilike(like),
+                    RuleTemplate.kind.ilike(like),
+                    RuleTemplate.description.ilike(like),
+                )
+            ).order_by(desc(RuleTemplate.updated_at))
+
+        templates_rows = db.execute(stmt.limit(200)).scalars().all()
+
+    ctx = {
+        "request": req,
+        "active_nav": "templates",
+        "flash": flash,
+        "q": q,
+        "templates": [_template_to_view(t) for t in templates_rows],
+        "create_template_url": _url(req, "admin_web_templates_new"),
+    }
+    return templates.TemplateResponse("templates.html", ctx)
+
+
+@router.get("/templates/new", name="admin_web_templates_new")
+async def templates_new_page(req: Request):
+    try:
+        _require_admin(req)
+    except PermissionError:
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
+
+    flash = _flash_from_query(req)
+
+    # template básico para ajudar a colar
+    example = {
+        "branding": {"name": "Atendimento"},
+        "hours": {"mode": "business", "open": "08:00", "close": "18:00"},
+        "messages": {
+            "off_hours": "Estamos fora do horário agora 🙂. Se quiser atendimento, digite *atendente*.",
+            "welcome": "Olá! Digite *menu* para ver opções.",
+            "fallback": "Não entendi. Digite *menu* para ver opções.",
+            "handoff_prompt": "Perfeito! Para encaminhar para um atendente, envie:\n*Nome* - *Telefone* - *Assunto*",
+            "handoff_ok": "Obrigado! ✅ Recebemos suas informações e um atendente vai falar com você em breve.",
+            "handoff_retry": "Não consegui entender. Envie no formato:\n*Nome* - *Telefone* - *Assunto*",
+        },
+        "menu": {"title": "Menu Principal", "options": [{"key": "1", "label": "Vendas", "reply": "Certo! O que você precisa?"}]},
+        "handoff": {"keyword": "atendente", "capture_lead": True},
+    }
+
+    ctx = {
+        "request": req,
+        "active_nav": "templates",
+        "flash": flash,
+        "create_action": _url(req, "admin_web_templates_create"),
+        "example_json": json.dumps(example, ensure_ascii=False, indent=2),
+        "back_url": _url(req, "admin_web_templates"),
+    }
+    return templates.TemplateResponse("template_new.html", ctx)
+
+
+@router.post("/templates/create", name="admin_web_templates_create")
+async def templates_create(
+    req: Request,
+    name: str = Form(...),
+    niche: str = Form(""),
+    kind: str = Form(""),
+    description: str = Form(""),
+    template_id: str = Form(""),
+    rules_text: str = Form(""),
+):
+    try:
+        _require_admin(req)
+    except PermissionError:
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
+
+    name = (name or "").strip()
+    niche = (niche or "").strip() or None
+    kind = (kind or "").strip() or None
+    description = (description or "").strip() or None
+    template_id = (template_id or "").strip() or _new_id("tpl")
+    rules_text = (rules_text or "").strip()
+
+    if not name:
+        return _redirect(req, "admin_web_templates_new", flash_kind="error", flash_message="Nome do template é obrigatório.")
+    if not rules_text:
+        return _redirect(req, "admin_web_templates_new", flash_kind="error", flash_message="Cole um JSON de regras (não pode vazio).")
+
+    try:
+        parsed = json.loads(rules_text)
+        if not isinstance(parsed, dict):
+            return _redirect(req, "admin_web_templates_new", flash_kind="error", flash_message="O JSON raiz deve ser um objeto (dict).")
+    except Exception as e:
+        return _redirect(req, "admin_web_templates_new", flash_kind="error", flash_message=f"JSON inválido: {e}")
+
+    with SessionLocal() as db:
+        exists_id = db.execute(select(RuleTemplate).where(RuleTemplate.id == template_id)).scalar_one_or_none()
+        if exists_id:
+            return _redirect(req, "admin_web_templates_new", flash_kind="error", flash_message=f"template_id já existe: {template_id}")
+
+        t = RuleTemplate(
+            id=template_id,
+            name=name,
+            niche=niche,
+            kind=kind,
+            description=description,
+            rules_json=parsed,
+            updated_at=func.now(),
+        )
+        db.add(t)
+
+        try:
+            db.commit()
+        except IntegrityError as e:
+            db.rollback()
+            logger.exception("TEMPLATE_CREATE_DB_ERROR: %s", e)
+            return _redirect(req, "admin_web_templates_new", flash_kind="error", flash_message="Erro de banco ao salvar template.")
+
+    return _redirect(req, "admin_web_templates", flash_kind="success", flash_message=f"Template criado: {name}")
+
+
+@router.get("/templates/{template_id}", name="admin_web_template_view")
+async def template_view(req: Request, template_id: str):
+    try:
+        _require_admin(req)
+    except PermissionError:
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
+
+    flash = _flash_from_query(req)
+    template_id = (template_id or "").strip()
+
+    with SessionLocal() as db:
+        t = db.execute(select(RuleTemplate).where(RuleTemplate.id == template_id).limit(1)).scalar_one_or_none()
+        if not t:
+            return _redirect(req, "admin_web_templates", flash_kind="error", flash_message=f"Template não encontrado: {template_id}")
+
+        # lista agentes para aplicar
+        agents = db.execute(select(Agent).order_by(desc(Agent.created_at))).scalars().all()
+
+        template_json = getattr(t, "rules_json", None) or {}
+        rules_text = json.dumps(template_json, ensure_ascii=False, indent=2)
+
+    ctx = {
+        "request": req,
+        "active_nav": "templates",
+        "flash": flash,
+        "template": _template_to_view(t),
+        "rules_text": rules_text,
+        "apply_action": _url(req, "admin_web_template_apply", template_id=template_id),
+        "agents": [{"id": a.id, "name": a.name, "instance": a.instance} for a in agents],
+        "back_url": _url(req, "admin_web_templates"),
+    }
+    return templates.TemplateResponse("template_view.html", ctx)
+
+
+@router.post("/templates/{template_id}/apply", name="admin_web_template_apply")
+async def template_apply(req: Request, template_id: str, agent_id: str = Form(...)):
+    try:
+        _require_admin(req)
+    except PermissionError:
+        return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
+
+    template_id = (template_id or "").strip()
+    agent_id = (agent_id or "").strip()
+
+    if not agent_id:
+        return _redirect(req, "admin_web_template_view", flash_kind="error", flash_message="Selecione um agente.", path_params={"template_id": template_id})
+
+    with SessionLocal() as db:
+        t = db.execute(select(RuleTemplate).where(RuleTemplate.id == template_id).limit(1)).scalar_one_or_none()
+        if not t:
+            return _redirect(req, "admin_web_templates", flash_kind="error", flash_message=f"Template não encontrado: {template_id}")
+
+        a = db.execute(select(Agent).where(Agent.id == agent_id).limit(1)).scalar_one_or_none()
+        if not a:
+            return _redirect(req, "admin_web_template_view", flash_kind="error", flash_message=f"Agente não encontrado: {agent_id}", path_params={"template_id": template_id})
+
+        a.rules_json = getattr(t, "rules_json", None) or {}
+        a.rules_updated_at = func.now()
+        db.add(a)
+
+        try:
+            db.commit()
+        except IntegrityError as e:
+            db.rollback()
+            logger.exception("TEMPLATE_APPLY_DB_ERROR: %s", e)
+            return _redirect(req, "admin_web_template_view", flash_kind="error", flash_message="Erro de banco ao aplicar template.", path_params={"template_id": template_id})
+
+    # invalida cache do rules_engine para esse agente
+    try:
+        invalidate_agent_rules(agent_id)
+    except Exception:
+        pass
+
+    return _redirect(req, "admin_web_agents", flash_kind="success", flash_message=f"Template aplicado no agente {a.instance}.")
 
 # -----------------------------------------------------------------------------
 # Agent Rules Editor
