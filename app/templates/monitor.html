@@ -101,84 +101,100 @@
     </div>
   </template>
 
-  <script>
-    const DATA_URL = "{{ data_url }}";
-    const REFRESH_MS = 20000;
+<script>
+  // Se o back estiver passando data_url absoluto e vier com http (mixed content),
+  // a gente cai para o relativo que sempre funciona no mesmo host.
+  const DATA_URL_FROM_SERVER = "{{ data_url }}";
+  const DATA_URL = (DATA_URL_FROM_SERVER && DATA_URL_FROM_SERVER.startsWith("/"))
+    ? DATA_URL_FROM_SERVER
+    : "/admin/web/monitor/data";
 
-    function $(id){ return document.getElementById(id); }
+  const REFRESH_MS = 20000;
 
-    function setText(el, txt){ el.textContent = (txt === null || txt === undefined || txt === "") ? "—" : String(txt); }
+  function $(id){ return document.getElementById(id); }
+  function setText(el, txt){ el.textContent = (txt === null || txt === undefined || txt === "") ? "—" : String(txt); }
 
-    function badgeStyle(status){
-      if(status === "online")   return {dot:"bg-emerald-500", badge:"bg-emerald-50 text-emerald-700"};
-      if(status === "degraded") return {dot:"bg-amber-500",   badge:"bg-amber-50 text-amber-700"};
-      if(status === "offline")  return {dot:"bg-rose-600",    badge:"bg-rose-50 text-rose-700"};
-      return {dot:"bg-slate-300", badge:"bg-slate-100 text-slate-700"};
+  function badgeStyle(status){
+    if(status === "online")   return {dot:"bg-emerald-500", badge:"bg-emerald-50 text-emerald-700"};
+    if(status === "degraded") return {dot:"bg-amber-500",   badge:"bg-amber-50 text-amber-700"};
+    if(status === "offline")  return {dot:"bg-rose-600",    badge:"bg-rose-50 text-rose-700"};
+    return {dot:"bg-slate-300", badge:"bg-slate-100 text-slate-700"};
+  }
+
+  function render(data){
+    const stats = data.stats || {};
+    setText($("stat_online"), stats.online);
+    setText($("stat_degraded"), stats.degraded);
+    setText($("stat_offline"), stats.offline);
+    setText($("stat_avg"), stats.avg_latency_ms ?? "—");
+
+    $("last_update").textContent = new Date().toLocaleString("pt-BR");
+
+    const grid = $("grid");
+    grid.innerHTML = "";
+
+    const items = (data.items || []).slice();
+    items.sort((a,b) => {
+      const order = {offline:0, degraded:1, online:2, unknown:3};
+      return (order[a.status] ?? 9) - (order[b.status] ?? 9);
+    });
+
+    for(const it of items){
+      const node = $("card_tpl").content.cloneNode(true);
+      const st = badgeStyle(it.status);
+
+      const dot = node.querySelector(".dot");
+      dot.className = "dot h-2.5 w-2.5 rounded-full " + st.dot;
+
+      const badge = node.querySelector(".badge");
+      badge.className = "badge inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold " + st.badge;
+      badge.textContent = it.status || "unknown";
+
+      setText(node.querySelector(".name"), it.name || it.instance);
+      setText(node.querySelector(".instance"), it.instance);
+      setText(node.querySelector(".client"), it.client_id);
+
+      const lat = (it.latency_ms === null || it.latency_ms === undefined) ? "—" : it.latency_ms;
+      setText(node.querySelector(".lat"), lat);
+
+      setText(node.querySelector(".checked"), it.checked_at || "—");
+
+      const conf = it.configured ? "base_url OK" : "sem base_url";
+      setText(node.querySelector(".conf"), conf);
+
+      setText(node.querySelector(".err"), it.error ? it.error : "—");
+
+      grid.appendChild(node);
     }
+  }
 
-    function render(data){
-      const stats = data.stats || {};
-      setText($("stat_online"), stats.online);
-      setText($("stat_degraded"), stats.degraded);
-      setText($("stat_offline"), stats.offline);
-      setText($("stat_avg"), stats.avg_latency_ms ?? "—");
-      const dt = new Date();
-      $("last_update").textContent = dt.toLocaleString("pt-BR");
-
-      const grid = $("grid");
-      grid.innerHTML = "";
-
-      const items = data.items || [];
-      items.sort((a,b) => {
-        const order = {offline:0, degraded:1, online:2, unknown:3};
-        return (order[a.status] ?? 9) - (order[b.status] ?? 9);
+  async function load(){
+    try{
+      const r = await fetch(DATA_URL, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        credentials: "include",     // ✅ manda cookie admin_token
+        cache: "no-store"           // ✅ evita cache em painéis NOC
       });
 
-      for(const it of items){
-        const node = $("card_tpl").content.cloneNode(true);
-        const root = node.querySelector(".rounded-3xl");
-        const st = badgeStyle(it.status);
-
-        const dot = node.querySelector(".dot");
-        dot.className = "dot h-2.5 w-2.5 rounded-full " + st.dot;
-
-        const badge = node.querySelector(".badge");
-        badge.className = "badge inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold " + st.badge;
-        badge.textContent = it.status;
-
-        setText(node.querySelector(".name"), it.name || it.instance);
-        setText(node.querySelector(".instance"), it.instance);
-        setText(node.querySelector(".client"), it.client_id);
-
-        const lat = (it.latency_ms === null || it.latency_ms === undefined) ? "—" : it.latency_ms;
-        setText(node.querySelector(".lat"), lat);
-
-        setText(node.querySelector(".checked"), it.checked_at || "—");
-
-        const conf = it.configured ? "base_url OK" : "sem base_url";
-        setText(node.querySelector(".conf"), conf);
-
-        const err = it.error ? it.error : "—";
-        setText(node.querySelector(".err"), err);
-
-        grid.appendChild(node);
+      // Se estiver deslogado, o backend pode retornar 401.
+      if(!r.ok){
+        const txt = await r.text().catch(()=>"");
+        throw new Error(`HTTP ${r.status} ${r.statusText}${txt ? " - " + txt.slice(0,120) : ""}`);
       }
+
+      const data = await r.json();
+      if(!data || data.ok !== true) throw new Error(data?.error || "bad_response");
+      render(data);
+    }catch(e){
+      $("last_update").textContent = "erro: " + (e?.message || e);
     }
+  }
 
-    async function load(){
-      try{
-        const r = await fetch(DATA_URL, {headers: {"Accept":"application/json"}});
-        const data = await r.json();
-        if(!data.ok) throw new Error(data.error || "bad_response");
-        render(data);
-      }catch(e){
-        $("last_update").textContent = "erro: " + e;
-      }
-    }
+  $("refresh").addEventListener("click", load);
 
-    $("refresh").addEventListener("click", load);
+  load();
+  setInterval(load, REFRESH_MS);
+</script>
 
-    load();
-    setInterval(load, REFRESH_MS);
-  </script>
 {% endblock %}
