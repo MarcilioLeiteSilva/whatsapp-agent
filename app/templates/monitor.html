@@ -5,7 +5,6 @@
 
   {% if mode == "tv" %}
     <style>
-      /* Modo TV (NOC): mais colunas e mais “presença” */
       h1 { font-size: 32px !important; }
       #grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
       @media (max-width: 1280px){ #grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; } }
@@ -19,11 +18,23 @@
       <p class="text-sm text-slate-600">Status dos agentes, latência e falhas. Atualiza automaticamente.</p>
     </div>
 
-    <div class="flex gap-2">
+    <div class="flex gap-2 flex-wrap items-center">
       <a href="/admin/web/monitor?mode=tv"
          class="h-10 inline-flex items-center px-4 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50">
         Modo TV
       </a>
+
+      <!-- Toggle view -->
+      <div class="h-10 inline-flex items-center rounded-xl bg-white border border-slate-200 overflow-hidden">
+        <button id="btn_grid" class="h-10 px-4 text-sm font-semibold hover:bg-slate-50">
+          Grid
+        </button>
+        <div class="w-px h-6 bg-slate-200"></div>
+        <button id="btn_list" class="h-10 px-4 text-sm font-semibold hover:bg-slate-50">
+          Lista
+        </button>
+      </div>
+
       <button id="refresh"
          class="h-10 inline-flex items-center px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
         Atualizar agora
@@ -61,7 +72,7 @@
     </div>
   </div>
 
-  <!-- Grid -->
+  <!-- GRID VIEW -->
   <div id="grid"
        class="{% if mode=='tv' %}mt-0{% else %}mt-4{% endif %} grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
   </div>
@@ -108,46 +119,94 @@
     </div>
   </template>
 
-  <script>
-    const DATA_URL_FROM_SERVER = "{{ data_url }}";
-    const DATA_URL = (DATA_URL_FROM_SERVER && DATA_URL_FROM_SERVER.startsWith("/"))
-      ? DATA_URL_FROM_SERVER
-      : "/admin/web/monitor/data";
+  <!-- LIST VIEW -->
+  <div id="list" class="mt-4 hidden">
+    <div class="bg-white rounded-2xl shadow-soft border overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="text-slate-500">
+          <tr class="border-b">
+            <th class="text-left py-3 px-4 font-semibold">Status</th>
+            <th class="text-left py-3 px-4 font-semibold">Agente</th>
+            <th class="text-left py-3 px-4 font-semibold">Instance</th>
+            <th class="text-left py-3 px-4 font-semibold">Client</th>
+            <th class="text-left py-3 px-4 font-semibold">Latência</th>
+            <th class="text-left py-3 px-4 font-semibold">Último check</th>
+            <th class="text-left py-3 px-4 font-semibold">Config</th>
+            <th class="text-left py-3 px-4 font-semibold">Erro</th>
+          </tr>
+        </thead>
+        <tbody id="list_body" class="divide-y"></tbody>
+      </table>
+    </div>
+  </div>
 
+  <template id="row_tpl">
+    <tr>
+      <td class="py-3 px-4">
+        <span class="row_badge inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
+          <span class="row_dot">●</span><span class="row_status">unknown</span>
+        </span>
+      </td>
+      <td class="py-3 px-4 font-semibold row_name">—</td>
+      <td class="py-3 px-4 font-mono text-xs row_instance">—</td>
+      <td class="py-3 px-4 font-mono text-xs row_client">—</td>
+      <td class="py-3 px-4 row_lat">—</td>
+      <td class="py-3 px-4 font-mono text-xs row_checked">—</td>
+      <td class="py-3 px-4 row_conf">—</td>
+      <td class="py-3 px-4 font-mono text-xs text-slate-600 row_err break-words">—</td>
+    </tr>
+  </template>
+
+  <script>
+    const DATA_URL = "/admin/web/monitor/data";
     const REFRESH_MS = 20000;
 
     function $(id){ return document.getElementById(id); }
     function setText(el, txt){ el.textContent = (txt === null || txt === undefined || txt === "") ? "—" : String(txt); }
 
     function badgeStyle(status){
-      if(status === "online")   return {dot:"bg-emerald-500", badge:"bg-emerald-50 text-emerald-700"};
-      if(status === "degraded") return {dot:"bg-amber-500",   badge:"bg-amber-50 text-amber-700"};
-      if(status === "offline")  return {dot:"bg-rose-600",    badge:"bg-rose-50 text-rose-700"};
-      return {dot:"bg-slate-300", badge:"bg-slate-100 text-slate-700"};
+      if(status === "online")   return {dot:"text-emerald-600", badge:"bg-emerald-50 text-emerald-700"};
+      if(status === "degraded") return {dot:"text-amber-600",   badge:"bg-amber-50 text-amber-700"};
+      if(status === "offline")  return {dot:"text-rose-700",    badge:"bg-rose-50 text-rose-700"};
+      return {dot:"text-slate-400", badge:"bg-slate-100 text-slate-700"};
     }
 
-    function render(data){
-      const stats = data.stats || {};
-      setText($("stat_online"), stats.online);
-      setText($("stat_degraded"), stats.degraded);
-      setText($("stat_offline"), stats.offline);
-      setText($("stat_avg"), stats.avg_latency_ms ?? "—");
-      $("last_update").textContent = new Date().toLocaleString("pt-BR");
+    // View mode: grid | list
+    const VIEW_KEY = "noc_view_mode";
+    function getViewMode(){
+      return localStorage.getItem(VIEW_KEY) || "grid";
+    }
+    function setViewMode(mode){
+      localStorage.setItem(VIEW_KEY, mode);
+      applyViewMode(mode);
+    }
+    function applyViewMode(mode){
+      const isGrid = (mode === "grid");
+      $("grid").classList.toggle("hidden", !isGrid);
+      $("list").classList.toggle("hidden", isGrid);
 
+      // botão ativo
+      const on = "bg-slate-900 text-white";
+      const off = "bg-white text-slate-900";
+      $("btn_grid").className = "h-10 px-4 text-sm font-semibold " + (isGrid ? on : off) + " hover:bg-slate-50";
+      $("btn_list").className = "h-10 px-4 text-sm font-semibold " + (!isGrid ? on : off) + " hover:bg-slate-50";
+    }
+
+    function renderGrid(items){
       const grid = $("grid");
       grid.innerHTML = "";
-
-      const items = (data.items || []).slice();
-      items.sort((a,b) => {
-        const order = {offline:0, degraded:1, online:2, unknown:3};
-        return (order[a.status] ?? 9) - (order[b.status] ?? 9);
-      });
 
       for(const it of items){
         const node = $("card_tpl").content.cloneNode(true);
         const st = badgeStyle(it.status);
 
-        node.querySelector(".dot").className = "dot h-2.5 w-2.5 rounded-full " + st.dot;
+        // dot/badge
+        const dot = node.querySelector(".dot");
+        dot.className = "dot h-2.5 w-2.5 rounded-full " + (
+          it.status === "online" ? "bg-emerald-500" :
+          it.status === "degraded" ? "bg-amber-500" :
+          it.status === "offline" ? "bg-rose-600" : "bg-slate-300"
+        );
 
         const badge = node.querySelector(".badge");
         badge.className = "badge inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold " + st.badge;
@@ -159,13 +218,60 @@
 
         const lat = (it.latency_ms === null || it.latency_ms === undefined) ? "—" : it.latency_ms;
         setText(node.querySelector(".lat"), lat);
-
         setText(node.querySelector(".checked"), it.checked_at || "—");
         setText(node.querySelector(".conf"), it.configured ? "base_url OK" : "sem base_url");
         setText(node.querySelector(".err"), it.error ? it.error : "—");
 
         grid.appendChild(node);
       }
+    }
+
+    function renderList(items){
+      const tbody = $("list_body");
+      tbody.innerHTML = "";
+
+      for(const it of items){
+        const node = $("row_tpl").content.cloneNode(true);
+        const st = badgeStyle(it.status);
+
+        const badge = node.querySelector(".row_badge");
+        badge.className = "row_badge inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold " + st.badge;
+
+        const dot = node.querySelector(".row_dot");
+        dot.className = "row_dot " + st.dot;
+
+        setText(node.querySelector(".row_status"), it.status || "unknown");
+        setText(node.querySelector(".row_name"), it.name || it.instance);
+        setText(node.querySelector(".row_instance"), it.instance);
+        setText(node.querySelector(".row_client"), it.client_id);
+
+        const lat = (it.latency_ms === null || it.latency_ms === undefined) ? "—" : (it.latency_ms + " ms");
+        setText(node.querySelector(".row_lat"), lat);
+
+        setText(node.querySelector(".row_checked"), it.checked_at || "—");
+        setText(node.querySelector(".row_conf"), it.configured ? "base_url OK" : "sem base_url");
+        setText(node.querySelector(".row_err"), it.error ? it.error : "—");
+
+        tbody.appendChild(node);
+      }
+    }
+
+    function render(data){
+      const stats = data.stats || {};
+      setText($("stat_online"), stats.online);
+      setText($("stat_degraded"), stats.degraded);
+      setText($("stat_offline"), stats.offline);
+      setText($("stat_avg"), stats.avg_latency_ms ?? "—");
+      $("last_update").textContent = new Date().toLocaleString("pt-BR");
+
+      const items = (data.items || []).slice();
+      items.sort((a,b) => {
+        const order = {offline:0, degraded:1, online:2, unknown:3};
+        return (order[a.status] ?? 9) - (order[b.status] ?? 9);
+      });
+
+      renderGrid(items);
+      renderList(items);
     }
 
     async function load(){
@@ -176,12 +282,10 @@
           credentials: "include",
           cache: "no-store"
         });
-
         if(!r.ok){
           const txt = await r.text().catch(()=>"");
           throw new Error(`HTTP ${r.status} ${r.statusText}${txt ? " - " + txt.slice(0,120) : ""}`);
         }
-
         const data = await r.json();
         if(!data || data.ok !== true) throw new Error(data?.error || "bad_response");
         render(data);
@@ -190,7 +294,13 @@
       }
     }
 
+    // events
     $("refresh").addEventListener("click", load);
+    $("btn_grid").addEventListener("click", () => setViewMode("grid"));
+    $("btn_list").addEventListener("click", () => setViewMode("list"));
+
+    // init
+    applyViewMode(getViewMode());
     load();
     setInterval(load, REFRESH_MS);
   </script>
