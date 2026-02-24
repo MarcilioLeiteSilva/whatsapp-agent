@@ -18,7 +18,7 @@ logger = logging.getLogger("agent")
 MONITOR_ENABLED = os.getenv("MONITOR_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y")
 MONITOR_INTERVAL_SECONDS = int(os.getenv("MONITOR_INTERVAL_SECONDS", "60"))
 MONITOR_TIMEOUT_SECONDS = float(os.getenv("MONITOR_TIMEOUT_SECONDS", "5"))
-MONITOR_DEGRADED_MS = int(os.getenv("MONITOR_DEGRADED_MS", "1200"))
+MONITOR_DEGRADED_MS = int(os.getenv("MONITOR_DEGRADED_MS", "1500"))
 
 # Retenção
 MONITOR_KEEP_PER_AGENT = int(os.getenv("MONITOR_KEEP_PER_AGENT", "50"))
