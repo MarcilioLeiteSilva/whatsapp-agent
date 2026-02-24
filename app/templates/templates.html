@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Templates</title></head>
+<body>
+  <h2>📚 Templates de Regras</h2>
+
+  {% if flash %}
+    <p><b>{{ flash.kind }}:</b> {{ flash.message }}</p>
+  {% endif %}
+
+  <form method="get" action="/admin/web/templates">
+    <input name="q" value="{{ q }}" placeholder="Buscar por nome/nicho/tipo..." />
+    <button type="submit">Buscar</button>
+    <a href="{{ create_template_url }}"><button type="button">+ Inserir template</button></a>
+  </form>
+
+  <hr/>
+
+  <table border="1" cellpadding="6">
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Nicho</th>
+        <th>Tipo</th>
+        <th>Atualizado</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in templates %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td>{{ t.niche or '-' }}</td>
+        <td>{{ t.kind or '-' }}</td>
+        <td>{{ t.updated_at or '-' }}</td>
+        <td>
+          <a href="/admin/web/templates/{{ t.id }}">Visualizar</a>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if templates|length == 0 %}
+      <tr><td colspan="5">Nenhum template cadastrado.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</body>
+</html>
