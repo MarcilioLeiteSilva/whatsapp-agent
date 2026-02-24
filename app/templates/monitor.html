@@ -65,7 +65,7 @@
   </div>
 
   <!-- Grid -->
-  <div id="grid" class="mt-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+  <div id="grid" class="{% if mode=='tv' %}mt-0{% else %}mt-4{% endif %} grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 p-4"></div>
 
   <template id="card_tpl">
     <div class="rounded-3xl shadow-soft border bg-white overflow-hidden">
