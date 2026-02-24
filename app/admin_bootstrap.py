@@ -1,4 +1,3 @@
-
 """
 app/admin_bootstrap.py
 
@@ -32,12 +31,14 @@ from __future__ import annotations
 
 import os
 import logging
-from typing import Any, Optional, Dict
+from typing import Optional, Dict
 
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel, Field
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
 from .db import SessionLocal
 from .models import Client, Agent
 
@@ -80,6 +81,18 @@ def _pick_first(*values: Optional[str]) -> str:
         if s:
             return s
     return ""
+
+
+def _commit_or_400(db, action: str) -> None:
+    """
+    Converte IntegrityError (constraints do Postgres) em HTTP 400 ao invés de 500.
+    """
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        logger.exception("BOOTSTRAP_DB_INTEGRITY_ERROR action=%s err=%s", action, e)
+        raise HTTPException(status_code=400, detail=f"DB constraint error during {action}")
 
 
 # -----------------------------------------------------------------------------
@@ -127,7 +140,9 @@ async def bootstrap(req: Request, body: BootstrapBody):
     )
     default_api_key = _pick_first(body.default_api_key, q_key, _env_default_api_key())
 
-    if not default_base_url or not (default_base_url.startswith("http://") or default_base_url.startswith("https://")):
+    if not default_base_url or not (
+        default_base_url.startswith("http://") or default_base_url.startswith("https://")
+    ):
         # Não quebra o bootstrap inteiro: cria client/agents e retorna aviso.
         logger.warning("BOOTSTRAP_WARN: default_base_url inválida/ausente: %r", default_base_url)
 
@@ -144,7 +159,7 @@ async def bootstrap(req: Request, body: BootstrapBody):
         if not client:
             client = Client(name=body.client_name, plan=body.plan)
             db.add(client)
-            db.commit()
+            _commit_or_400(db, "create_client")
             db.refresh(client)
             created["client"] = True
 
@@ -171,7 +186,7 @@ async def bootstrap(req: Request, body: BootstrapBody):
                     api_key=None,
                 )
                 db.add(agent)
-                db.commit()
+                _commit_or_400(db, f"create_agent:{inst}")
                 db.refresh(agent)
                 created["agents_created"] += 1
                 is_new = True
@@ -205,7 +220,9 @@ async def bootstrap(req: Request, body: BootstrapBody):
                 elif not base_to_set:
                     created["warnings"].append(f"instance={inst}: base_url vazio (não gravado)")
                 else:
-                    created["warnings"].append(f"instance={inst}: base_url inválido {base_to_set!r} (não gravado)")
+                    created["warnings"].append(
+                        f"instance={inst}: base_url inválido {base_to_set!r} (não gravado)"
+                    )
 
                 if key_to_set:
                     if (agent.api_key or "").strip() != key_to_set:
@@ -216,7 +233,7 @@ async def bootstrap(req: Request, body: BootstrapBody):
 
                 if changed:
                     db.add(agent)
-                    db.commit()
+                    _commit_or_400(db, f"update_agent_credentials:{inst}")
                     db.refresh(agent)
                     created["agents_updated"] += 1
 
