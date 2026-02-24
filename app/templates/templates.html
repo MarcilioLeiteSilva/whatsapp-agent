@@ -1,47 +1,48 @@
-<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>Templates</title></head>
-<body>
-  <h2>📚 Templates de Regras</h2>
+{% extends "base.html" %}
 
-  {% if flash %}
-    <p><b>{{ flash.kind }}:</b> {{ flash.message }}</p>
-  {% endif %}
+{% block content %}
 
-  <form method="get" action="/admin/web/templates">
-    <input name="q" value="{{ q }}" placeholder="Buscar por nome/nicho/tipo..." />
-    <button type="submit">Buscar</button>
-    <a href="{{ create_template_url }}"><button type="button">+ Inserir template</button></a>
-  </form>
+<h2>📚 Templates de Regras</h2>
 
-  <hr/>
+{% if flash %}
+  <div class="alert alert-{{ flash.kind }}">
+    {{ flash.message }}
+  </div>
+{% endif %}
 
-  <table border="1" cellpadding="6">
-    <thead>
-      <tr>
-        <th>Nome</th>
-        <th>Nicho</th>
-        <th>Tipo</th>
-        <th>Atualizado</th>
-        <th>Ações</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for t in templates %}
-      <tr>
-        <td>{{ t.name }}</td>
-        <td>{{ t.niche or '-' }}</td>
-        <td>{{ t.kind or '-' }}</td>
-        <td>{{ t.updated_at or '-' }}</td>
-        <td>
-          <a href="/admin/web/templates/{{ t.id }}">Visualizar</a>
-        </td>
-      </tr>
-      {% endfor %}
-      {% if templates|length == 0 %}
-      <tr><td colspan="5">Nenhum template cadastrado.</td></tr>
-      {% endif %}
-    </tbody>
-  </table>
-</body>
-</html>
+<form method="get">
+  <input name="q" value="{{ q }}" placeholder="Buscar..." />
+  <button type="submit">Buscar</button>
+  <a href="{{ create_template_url }}" class="btn btn-primary">+ Inserir template</a>
+</form>
+
+<hr>
+
+<table class="table">
+  <thead>
+    <tr>
+      <th>Nome</th>
+      <th>Nicho</th>
+      <th>Tipo</th>
+      <th>Atualizado</th>
+      <th>Ações</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in templates %}
+    <tr>
+      <td>{{ t.name }}</td>
+      <td>{{ t.niche or '-' }}</td>
+      <td>{{ t.kind or '-' }}</td>
+      <td>{{ t.updated_at or '-' }}</td>
+      <td>
+        <a href="/admin/web/templates/{{ t.id }}" class="btn btn-sm btn-outline-primary">
+          Visualizar
+        </a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}
