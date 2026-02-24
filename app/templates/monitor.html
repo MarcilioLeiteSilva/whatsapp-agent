@@ -3,6 +3,14 @@
 
 {% block content %}
   {% if mode == "tv" %}
+  <style>
+    /* deixa mais “NOC” */
+    h1 { font-size: 32px !important; }
+    #grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+    @media (max-width: 1280px){ #grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; } }
+    @media (max-width: 900px){  #grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+  </style>
+{% endif %}
     <style>
       /* modo TV: tira paddings extras e sidebar já está no base.html - se quiser full, depois fazemos um base_tv */
     </style>
