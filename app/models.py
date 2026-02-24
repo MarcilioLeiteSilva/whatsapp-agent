@@ -6,7 +6,6 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.schema import Identity
-
 from .db import Base
 
 
@@ -63,6 +62,20 @@ class Lead(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
 
+class RuleTemplate(Base):
+    __tablename__ = "rule_templates"
+
+    id = Column(Text, primary_key=True)
+    name = Column(Text, nullable=False)
+    niche = Column(Text, nullable=True)
+    kind = Column(Text, nullable=True)
+    description = Column(Text, nullable=True)
+
+    rules_json = Column(JSONB, nullable=False, server_default="{}")
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+
+
 class AgentCheck(Base):
     """
     Snapshot de monitoramento por agente.
@@ -81,20 +94,5 @@ class AgentCheck(Base):
     details = Column(JSONB, nullable=True)
 
     checked_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
-
-
-
-class RuleTemplate(Base):
-    __tablename__ = "rule_templates"
-
-    id = Column(Text, primary_key=True)
-    name = Column(Text, nullable=False)
-    niche = Column(Text, nullable=True)
-    kind = Column(Text, nullable=True)
-    description = Column(Text, nullable=True)
-
-    rules_json = Column(JSONB, nullable=False, server_default="{}")
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
 
     agent = relationship("Agent", lazy="joined")
