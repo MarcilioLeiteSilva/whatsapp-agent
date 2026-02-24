@@ -1,10 +1,11 @@
 # app/models.py
 from __future__ import annotations
 
-from sqlalchemy import Column, Text, TIMESTAMP, ForeignKey, Integer
+from sqlalchemy import Column, Text, TIMESTAMP, ForeignKey, Integer, BigInteger
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.schema import Identity
 
 from .db import Base
 
@@ -69,7 +70,9 @@ class AgentCheck(Base):
     """
     __tablename__ = "agent_checks"
 
-    id = Column(Text, primary_key=True)
+    # BIGSERIAL (Postgres) via Identity()
+    id = Column(BigInteger, Identity(always=False), primary_key=True)
+
     agent_id = Column(Text, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
 
     status = Column(Text, nullable=False, default="unknown")  # online|degraded|offline|unknown
