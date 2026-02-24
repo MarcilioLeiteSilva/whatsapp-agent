@@ -4,161 +4,157 @@ from __future__ import annotations
 import os
 import time
 import asyncio
+import secrets
 import logging
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
+from typing import Optional
 
 import httpx
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, delete
+
 from .db import SessionLocal
 from .models import Agent, AgentCheck
 
 logger = logging.getLogger("agent")
 
-# Config
-MONITOR_ENABLED = os.getenv("MONITOR_ENABLED", "true").lower() in ("1", "true", "yes", "y")
+
+MONITOR_ENABLED = os.getenv("MONITOR_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y")
 MONITOR_INTERVAL_SECONDS = int(os.getenv("MONITOR_INTERVAL_SECONDS", "20"))
-MONITOR_TIMEOUT_SECONDS = float(os.getenv("MONITOR_TIMEOUT_SECONDS", "4.0"))
-MONITOR_DEGRADED_MS = int(os.getenv("MONITOR_DEGRADED_MS", "1500"))
-MONITOR_OFFLINE_AFTER_FAILS = int(os.getenv("MONITOR_OFFLINE_AFTER_FAILS", "2"))
+MONITOR_TIMEOUT_SECONDS = float(os.getenv("MONITOR_TIMEOUT_SECONDS", "5"))
+MONITOR_DEGRADED_MS = int(os.getenv("MONITOR_DEGRADED_MS", "1200"))
 
-# Telegram (opcional)
-TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN", "") or "").strip()
-TELEGRAM_CHAT_ID = (os.getenv("TELEGRAM_CHAT_ID", "") or "").strip()
-ALERT_COOLDOWN_SECONDS = int(os.getenv("ALERT_COOLDOWN_SECONDS", "300"))  # 5 min
+# endpoint “genérico” (funciona com qualquer base_url)
+# se você quiser testar uma rota real da Evolution depois, só muda via env
+MONITOR_PING_PATH = (os.getenv("MONITOR_PING_PATH", "/") or "/").strip()
+MONITOR_APIKEY_HEADER = (os.getenv("MONITOR_APIKEY_HEADER", "apikey") or "apikey").strip()
 
-# estado em memória p/ evitar spam (bom o suficiente pro começo)
-_last_alert_at: Dict[str, float] = {}
-_last_status: Dict[str, str] = {}
-_fail_streak: Dict[str, int] = {}
+# retenção
+MONITOR_KEEP_PER_AGENT = int(os.getenv("MONITOR_KEEP_PER_AGENT", "50"))
 
 
-async def _telegram_send(text: str) -> None:
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
-    try:
-        async with httpx.AsyncClient(timeout=8) as c:
-            r = await c.post(url, json=payload)
-            r.raise_for_status()
-    except Exception as e:
-        logger.error("TELEGRAM_SEND_ERROR: %s", e)
+def _new_id(prefix: str) -> str:
+    return f"{prefix}_{secrets.token_hex(6)}"
 
 
-def _should_alert(key: str, new_status: str) -> bool:
-    now = time.time()
-    last_t = _last_alert_at.get(key, 0.0)
-    last_s = _last_status.get(key, "unknown")
-
-    # só alerta quando muda o status (ou se ficou offline e cooldown passou)
-    if new_status != last_s:
-        if now - last_t >= 5:  # micro proteção
-            return True
-
-    if new_status == "offline" and (now - last_t) >= ALERT_COOLDOWN_SECONDS:
-        return True
-
-    return False
+def _normalize_base_url(s: Optional[str]) -> str:
+    return (s or "").strip().rstrip("/")
 
 
-async def _alert_if_needed(agent: Agent, status: str, latency_ms: Optional[int], error: Optional[str]) -> None:
-    key = f"{agent.id}"
-    if not _should_alert(key, status):
-        _last_status[key] = status
-        return
-
-    _last_alert_at[key] = time.time()
-    _last_status[key] = status
-
-    name = getattr(agent, "name", None) or agent.instance
-    inst = agent.instance
-    client_id = agent.client_id
-
-    if status == "online":
-        msg = f"🟢 ONLINE: {name} ({inst}) client={client_id} latency={latency_ms}ms"
-    elif status == "degraded":
-        msg = f"🟡 DEGRADED: {name} ({inst}) client={client_id} latency={latency_ms}ms"
-    else:
-        msg = f"🔴 OFFLINE: {name} ({inst}) client={client_id} err={error or 'timeout'}"
-
-    await _telegram_send(msg)
+def _build_ping_url(base_url: str) -> str:
+    base_url = _normalize_base_url(base_url)
+    path = MONITOR_PING_PATH
+    if not path.startswith("/"):
+        path = "/" + path
+    return f"{base_url}{path}"
 
 
-async def _check_one(agent: Agent) -> Dict[str, Any]:
+async def _check_one(agent: Agent) -> dict:
     """
-    Check simples e robusto:
-    - tenta GET no evolution_base_url do agente (ou / se já responde)
-    - você pode evoluir depois p/ endpoint mais confiável (ex: /health)
+    Retorna dict com status/latency/error/details
     """
-    base = (getattr(agent, "evolution_base_url", None) or "").strip().rstrip("/")
-    if not base or not base.startswith(("http://", "https://")):
-        return {"status": "unknown", "latency_ms": None, "error": "missing_base_url"}
+    base_url = _normalize_base_url(getattr(agent, "evolution_base_url", None))
+    api_key = (getattr(agent, "api_key", None) or "").strip()
 
-    url = base  # simples; pode virar f"{base}/health" se preferir
+    if not base_url:
+        return {
+            "status": "unknown",
+            "latency_ms": None,
+            "error": "missing_base_url",
+            "details": {"reason": "agent.evolution_base_url vazio"},
+        }
+
+    url = _build_ping_url(base_url)
+    headers = {}
+    if api_key:
+        headers[MONITOR_APIKEY_HEADER] = api_key
 
     t0 = time.time()
     try:
         async with httpx.AsyncClient(timeout=MONITOR_TIMEOUT_SECONDS) as c:
-            r = await c.get(url)
-            _ = r.status_code
-        ms = int((time.time() - t0) * 1000)
-        if ms >= MONITOR_DEGRADED_MS:
-            return {"status": "degraded", "latency_ms": ms, "error": None}
-        return {"status": "online", "latency_ms": ms, "error": None}
+            r = await c.get(url, headers=headers)
+        ms = int(round((time.time() - t0) * 1000))
+
+        if 200 <= r.status_code < 400:
+            status = "degraded" if ms >= MONITOR_DEGRADED_MS else "online"
+            return {
+                "status": status,
+                "latency_ms": ms,
+                "error": None,
+                "details": {"url": url, "http_status": r.status_code},
+            }
+
+        return {
+            "status": "offline",
+            "latency_ms": ms,
+            "error": f"http_{r.status_code}",
+            "details": {"url": url, "http_status": r.status_code},
+        }
+
     except Exception as e:
-        return {"status": "offline", "latency_ms": None, "error": str(e)}
+        ms = int(round((time.time() - t0) * 1000))
+        err = str(e)
+        if len(err) > 300:
+            err = err[:300] + "..."
+        return {
+            "status": "offline",
+            "latency_ms": ms,
+            "error": err,
+            "details": {"url": url, "exception": str(type(e).__name__)},
+        }
 
 
-def _persist_check(agent: Agent, mode: str, status: str, latency_ms: Optional[int], error: Optional[str]) -> None:
+def _save_check(agent_id: str, result: dict) -> None:
     with SessionLocal() as db:
         row = AgentCheck(
-            client_id=agent.client_id,
-            agent_id=agent.id,
-            instance=agent.instance,
-            mode=mode,
-            status=status,
-            latency_ms=latency_ms,
-            error=(error or None),
+            id=_new_id("chk"),
+            agent_id=agent_id,
+            status=result.get("status") or "unknown",
+            latency_ms=result.get("latency_ms"),
+            error=result.get("error"),
+            details=result.get("details"),
         )
         db.add(row)
         db.commit()
 
-
-async def poll_once() -> None:
-    with SessionLocal() as db:
-        agents: List[Agent] = db.execute(select(Agent).order_by(desc(Agent.created_at))).scalars().all()
-
-    for a in agents:
-        key = str(a.id)
-        res = await _check_one(a)
-
-        # streak de falhas p/ offline real (evita piscar)
-        if res["status"] == "offline":
-            _fail_streak[key] = _fail_streak.get(key, 0) + 1
-        else:
-            _fail_streak[key] = 0
-
-        effective_status = res["status"]
-        if res["status"] == "offline" and _fail_streak[key] < MONITOR_OFFLINE_AFTER_FAILS:
-            effective_status = "degraded"  # “suspeito” antes do offline definitivo
-
-        _persist_check(a, mode="poll", status=effective_status, latency_ms=res["latency_ms"], error=res["error"])
-
-        await _alert_if_needed(a, effective_status, res["latency_ms"], res["error"])
+        # retenção: mantém só os últimos N checks por agent
+        if MONITOR_KEEP_PER_AGENT > 0:
+            ids = (
+                db.execute(
+                    select(AgentCheck.id)
+                    .where(AgentCheck.agent_id == agent_id)
+                    .order_by(desc(AgentCheck.checked_at))
+                    .offset(MONITOR_KEEP_PER_AGENT)
+                )
+                .scalars()
+                .all()
+            )
+            if ids:
+                db.execute(delete(AgentCheck).where(AgentCheck.id.in_(ids)))
+                db.commit()
 
 
-async def monitoring_loop() -> None:
+async def monitor_loop() -> None:
     if not MONITOR_ENABLED:
-        logger.info("MONITOR: disabled")
+        logger.info("MONITOR_LOOP_DISABLED")
         return
 
-    logger.info("MONITOR: enabled interval=%ss timeout=%ss", MONITOR_INTERVAL_SECONDS, MONITOR_TIMEOUT_SECONDS)
+    logger.info("MONITOR_LOOP_START interval=%ss timeout=%ss ping_path=%s", MONITOR_INTERVAL_SECONDS, MONITOR_TIMEOUT_SECONDS, MONITOR_PING_PATH)
 
-    # loop infinito
     while True:
         try:
-            await poll_once()
+            with SessionLocal() as db:
+                agents = db.execute(select(Agent).order_by(desc(Agent.created_at))).scalars().all()
+
+            # faz checks em paralelo com limite simples
+            sem = asyncio.Semaphore(10)
+
+            async def run_one(a: Agent):
+                async with sem:
+                    res = await _check_one(a)
+                    _save_check(str(a.id), res)
+
+            await asyncio.gather(*(run_one(a) for a in agents))
+
         except Exception as e:
-            logger.error("MONITOR_LOOP_ERROR: %s", e)
+            logger.exception("MONITOR_LOOP_ERROR: %s", e)
+
         await asyncio.sleep(MONITOR_INTERVAL_SECONDS)
