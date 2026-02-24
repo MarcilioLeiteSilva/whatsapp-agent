@@ -31,6 +31,7 @@ import logging
 import json
 import csv
 import io
+import datetime
 from typing import Any, Optional
 
 import httpx
@@ -39,6 +40,7 @@ from fastapi.responses import RedirectResponse, JSONResponse, Response
 from starlette.templating import Jinja2Templates
 
 from sqlalchemy import select, func, or_, desc
+from sqlalchemy.exc import IntegrityError
 
 from .db import SessionLocal
 from .models import Client, Agent, Lead, AgentCheck
@@ -65,6 +67,7 @@ SIMULATOR_BASE_URL = (os.getenv("SIMULATOR_BASE_URL", "http://whatsapp-simulator
 ADMIN_USER = (os.getenv("ADMIN_USER", "admin") or "").strip()
 ADMIN_TOKEN = (os.getenv("ADMIN_TOKEN", "") or "").strip()
 
+# Timezone de exibição (não muda DB; converte só na UI)
 BR_TZ = os.getenv("APP_TIMEZONE", "America/Sao_Paulo").strip() or "America/Sao_Paulo"
 ONLINE_SECONDS = int(os.getenv("AGENT_ONLINE_SECONDS", "120"))  # heurística: last_seen_at <= 120s => online
 
@@ -83,10 +86,29 @@ def _tz():
     return None
 
 
+def _assume_utc_if_naive(dt):
+    """
+    Segurança: se algum datetime vier naive, assume UTC (para não quebrar conversão).
+    """
+    if not dt:
+        return dt
+    try:
+        if getattr(dt, "tzinfo", None) is None:
+            return dt.replace(tzinfo=datetime.timezone.utc)
+    except Exception:
+        pass
+    return dt
+
+
 def _fmt_dt_br(dt) -> str:
+    """
+    Formata datetime para dd/mm/YYYY HH:MM:SS no fuso APP_TIMEZONE.
+    Banco permanece UTC; conversão é só para exibição.
+    """
     if not dt:
         return "-"
     try:
+        dt = _assume_utc_if_naive(dt)
         tz = _tz()
         if tz:
             dt = dt.astimezone(tz)
@@ -100,6 +122,7 @@ def _is_online(last_seen_at) -> bool:
         return False
     try:
         now = time.time()
+        last_seen_at = _assume_utc_if_naive(last_seen_at)
         age = now - last_seen_at.timestamp()
         return age <= ONLINE_SECONDS
     except Exception:
@@ -174,6 +197,26 @@ def _require_admin(req: Request) -> None:
 
     if got != ADMIN_TOKEN:
         raise PermissionError("unauthorized")
+
+
+def _db_commit_or_redirect(req: Request, db, *, action: str, redirect_to: str, redirect_params: Optional[dict] = None):
+    """
+    Evita 500 silencioso em constraint do Postgres (IntegrityError).
+    Em caso de erro, dá rollback e redireciona com flash error.
+    """
+    try:
+        db.commit()
+        return None
+    except IntegrityError as e:
+        db.rollback()
+        logger.exception("ADMIN_WEB_DB_INTEGRITY_ERROR action=%s err=%s", action, e)
+        return _redirect(
+            req,
+            redirect_to,
+            flash_kind="error",
+            flash_message=f"Erro de banco ao salvar ({action}). Verifique constraints/duplicidade/campos obrigatórios.",
+            extra_qs=redirect_params or None,
+        )
 
 
 def _client_to_view(c: Client) -> dict:
@@ -379,6 +422,7 @@ async def dashboard(req: Request):
         "status": status,
         "status_url": "/status",
         "recent_leads": recent_leads,
+        "app_timezone": BR_TZ,
     }
     return templates.TemplateResponse("dashboard.html", ctx)
 
@@ -405,6 +449,7 @@ async def clients_page(req: Request):
         "flash": flash,
         "clients": [_client_to_view(c) for c in clients],
         "create_client_action": _url(req, "admin_web_clients_create"),
+        "app_timezone": BR_TZ,
     }
     return templates.TemplateResponse("clients.html", ctx)
 
@@ -437,7 +482,9 @@ async def clients_create(req: Request, name: str = Form(...), plan: str = Form("
 
         c = Client(id=client_id, name=name, plan=plan)
         db.add(c)
-        db.commit()
+        err_resp = _db_commit_or_redirect(req, db, action="create_client", redirect_to="admin_web_clients")
+        if err_resp:
+            return err_resp
         db.refresh(c)
 
         logger.info("ADMIN_WEB_CLIENT_CREATED: client_id=%s name=%s plan=%s", c.id, name, plan)
@@ -471,7 +518,9 @@ async def clients_generate_token(req: Request, client_id: str):
         c.login_token = token
         c.login_token_created_at = func.now()
         db.add(c)
-        db.commit()
+        err_resp = _db_commit_or_redirect(req, db, action="clients_generate_token", redirect_to="admin_web_clients")
+        if err_resp:
+            return err_resp
 
     return _redirect(req, "admin_web_clients", flash_kind="success", flash_message=f"Token gerado para {client_id}: {token}")
 
@@ -502,6 +551,7 @@ async def agents_page(req: Request):
         "clients": [_client_to_view(c) for c in clients],
         "agents": agents_view,
         "create_agent_action": _url(req, "admin_web_agents_create"),
+        "app_timezone": BR_TZ,
     }
     return templates.TemplateResponse("agents.html", ctx)
 
@@ -548,6 +598,10 @@ async def agents_create(
         if exists_instance:
             return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Instance já existe: {instance}")
 
+        # Importante:
+        # - Alguns schemas antigos tinham rules_updated_at NOT NULL.
+        # - Para evitar 500 (NotNullViolation), já setamos rules_updated_at=func.now() na criação.
+        # - rules_json default {} também ajuda em schemas com NOT NULL.
         a = Agent(
             id=agent_id,
             client_id=client_id,
@@ -556,9 +610,15 @@ async def agents_create(
             evolution_base_url=evolution_base_url or None,
             api_key=api_key or None,
             status=status,
+            rules_json={},  # safe default
+            rules_updated_at=func.now(),  # safe default para schemas NOT NULL
         )
         db.add(a)
-        db.commit()
+
+        err_resp = _db_commit_or_redirect(req, db, action="create_agent", redirect_to="admin_web_agents")
+        if err_resp:
+            return err_resp
+
         db.refresh(a)
 
         logger.info(
@@ -639,6 +699,7 @@ async def leads_page(req: Request, q: str = ""):
         "q": q,
         "leads": leads_view,
         "export_csv_url": _url(req, "admin_web_leads_export_csv"),
+        "app_timezone": BR_TZ,
     }
     return templates.TemplateResponse("leads.html", ctx)
 
@@ -747,6 +808,7 @@ async def simulator_page(req: Request):
         "default_from_number": "5531999999999",
         "default_text": "",
         "last_simulation": req.query_params.get("last_simulation") or "",
+        "app_timezone": BR_TZ,
     }
     return templates.TemplateResponse("simulator.html", ctx)
 
@@ -764,14 +826,24 @@ async def simulator_send(
         return _redirect(req, "admin_web_login", flash_kind="error", flash_message="Faça login para acessar.")
 
     if not ALLOW_SIMULATOR:
-        return _redirect(req, "admin_web_simulator", flash_kind="error", flash_message="Simulator desabilitado (ALLOW_SIMULATOR=false).")
+        return _redirect(
+            req,
+            "admin_web_simulator",
+            flash_kind="error",
+            flash_message="Simulator desabilitado (ALLOW_SIMULATOR=false).",
+        )
 
     instance = (instance or "").strip()
     from_number = (from_number or "").strip()
     text = (text or "").strip()
 
     if not instance or not from_number or not text:
-        return _redirect(req, "admin_web_simulator", flash_kind="error", flash_message="instance, from_number e text são obrigatórios.")
+        return _redirect(
+            req,
+            "admin_web_simulator",
+            flash_kind="error",
+            flash_message="instance, from_number e text são obrigatórios.",
+        )
 
     payload = {"instance": instance, "from_number": from_number, "text": text}
 
@@ -820,6 +892,7 @@ async def chatlab_page(req: Request):
         "flash": flash,
         "instances": instances,
         "send_url": _url(req, "admin_web_chatlab_send"),
+        "app_timezone": BR_TZ,
     }
     return templates.TemplateResponse("chatlab.html", ctx)
 
@@ -926,6 +999,7 @@ async def monitor_page(req: Request):
         "mode": mode,
         "tv_mode": (mode == "tv"),
         "data_url": "/admin/web/monitor/data",  # recomendo fixo/relativo
+        "app_timezone": BR_TZ,
     }
     return templates.TemplateResponse("monitor.html", ctx)
 
@@ -984,6 +1058,7 @@ async def monitor_data(req: Request):
                     "latency_ms": latency_ms,
                     "error": err,
                     "checked_at": _fmt_dt_br(checked_at) if checked_at else None,
+                    "timezone": BR_TZ,
                 }
             )
 
@@ -1044,6 +1119,7 @@ async def agent_rules_page(req: Request, agent_id: str):
         "save_action": _url(req, "admin_web_agent_rules_save", agent_id=agent_id),
         "reset_action": _url(req, "admin_web_agent_rules_reset", agent_id=agent_id),
         "back_url": _url(req, "admin_web_agents"),
+        "app_timezone": BR_TZ,
     }
     return templates.TemplateResponse("agent_rules.html", ctx)
 
@@ -1092,13 +1168,18 @@ async def agent_rules_save(req: Request, agent_id: str, rules_text: str = Form("
             return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Agent não encontrado: {agent_id}")
 
         a.rules_json = parsed  # JSONB
-        try:
-            a.rules_updated_at = func.now()
-        except Exception:
-            pass
+        a.rules_updated_at = func.now()
 
         db.add(a)
-        db.commit()
+        err_resp = _db_commit_or_redirect(
+            req,
+            db,
+            action="save_rules",
+            redirect_to="admin_web_agent_rules",
+            redirect_params=None,
+        )
+        if err_resp:
+            return err_resp
         db.refresh(a)
 
     # invalida cache do rules_engine
@@ -1156,13 +1237,12 @@ async def agent_rules_reset(req: Request, agent_id: str):
             return _redirect(req, "admin_web_agents", flash_kind="error", flash_message=f"Agent não encontrado: {agent_id}")
 
         a.rules_json = template_rules
-        try:
-            a.rules_updated_at = func.now()
-        except Exception:
-            pass
+        a.rules_updated_at = func.now()
 
         db.add(a)
-        db.commit()
+        err_resp = _db_commit_or_redirect(req, db, action="reset_rules", redirect_to="admin_web_agent_rules")
+        if err_resp:
+            return err_resp
         db.refresh(a)
 
     try:
