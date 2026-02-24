@@ -9,6 +9,9 @@ from sqlalchemy.schema import Identity
 from .db import Base
 
 
+
+
+
 class Client(Base):
     __tablename__ = "clients"
     id = Column(Text, primary_key=True)
@@ -20,6 +23,19 @@ class Client(Base):
     login_token = Column(Text)
     login_token_created_at = Column(TIMESTAMP(timezone=True))
     login_token_last_used_at = Column(TIMESTAMP(timezone=True))
+
+class RuleTemplate(Base):
+    __tablename__ = "rule_templates"
+
+    id = Column(Text, primary_key=True)
+    name = Column(Text, nullable=False)
+    niche = Column(Text, nullable=True)
+    kind = Column(Text, nullable=True)
+    description = Column(Text, nullable=True)
+
+    rules_json = Column(JSONB, nullable=False, server_default="{}")
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
 
 
 class Agent(Base):
@@ -60,21 +76,6 @@ class Lead(Base):
     origem = Column(Text)
 
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
-
-
-class RuleTemplate(Base):
-    __tablename__ = "rule_templates"
-
-    id = Column(Text, primary_key=True)
-    name = Column(Text, nullable=False)
-    niche = Column(Text, nullable=True)
-    kind = Column(Text, nullable=True)
-    description = Column(Text, nullable=True)
-
-    rules_json = Column(JSONB, nullable=False, server_default="{}")
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
-
 
 class AgentCheck(Base):
     """
