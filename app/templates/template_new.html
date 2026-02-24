@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Novo Template</title></head>
+<body>
+  <h2>➕ Inserir Template</h2>
+
+  {% if flash %}
+    <p><b>{{ flash.kind }}:</b> {{ flash.message }}</p>
+  {% endif %}
+
+  <form method="post" action="{{ create_action }}">
+    <p><label>Nome*</label><br/>
+      <input name="name" style="width: 420px;" required />
+    </p>
+
+    <p><label>Nicho</label><br/>
+      <input name="niche" placeholder="ex: placas, viagens, clínica..." style="width: 420px;" />
+    </p>
+
+    <p><label>Tipo</label><br/>
+      <input name="kind" placeholder="ex: atendimento, vendas, suporte" style="width: 420px;" />
+    </p>
+
+    <p><label>Descrição</label><br/>
+      <input name="description" style="width: 600px;" />
+    </p>
+
+    <p><label>JSON de Regras*</label><br/>
+      <textarea name="rules_text" rows="22" cols="100">{{ example_json }}</textarea>
+    </p>
+
+    <button type="submit">Salvar Template</button>
+    <a href="{{ back_url }}"><button type="button">Voltar</button></a>
+  </form>
+</body>
+</html>
