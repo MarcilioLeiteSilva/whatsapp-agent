@@ -1,8 +1,9 @@
 import os
 import time
 import logging
-
 import httpx
+import asyncio
+from .monitoring import monitor_loop
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -180,6 +181,16 @@ def extract_payload(payload: dict):
 # -----------------------------------------------------------------------------
 # Basic endpoints
 # -----------------------------------------------------------------------------
+@app.on_event("startup")
+async def on_startup():
+    if init_db_if_dev:
+        init_db_if_dev()
+
+    # dispara o monitor em background
+    asyncio.create_task(monitor_loop())
+    logger.info("MONITOR_TASK_SCHEDULED")
+
+
 @app.get("/")
 async def root():
     return {"ok": True}
