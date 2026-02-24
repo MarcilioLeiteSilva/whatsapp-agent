@@ -78,9 +78,11 @@
             <span class="text-sm font-medium">Monitor</span>
           </a>
 
-           <li class="{{ 'active' if active_nav == 'templates' else '' }}">
-                <a href="/admin/web/templates">Templates</a>
-            </li>
+           <a href="{{ url('templates') }}"
+             class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10 {% if current=='templates' %}bg-white/10{% endif %}">
+                <span class="text-sm font-medium">Templates</span>
+                </a>
+            
           
         </div>
       </nav>
