@@ -48,10 +48,6 @@ from .rules import reply_for, detect_intents
 from .lead_logger import ensure_first_contact, mark_intent, save_handoff_lead, get_agent_by_instance
 from .rules_engine import invalidate_agent_rules
 
-from app.utils.timezone import to_brt
-checked_at_local = to_brt(check.checked_at)
-
-
 try:
     from zoneinfo import ZoneInfo
 except Exception:
