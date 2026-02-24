@@ -5,17 +5,17 @@ import os
 import time
 import logging
 import asyncio
-
+import logging
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-
+from .db import engine
 from app.portal_web import router as portal_router
 from .admin_web import router as admin_web_router
 from .admin import router as admin_router
-
-from .models import Client, Agent, Lead
+from .monitoring import monitor_loop
+from .models import Client, Agent, Lead, Base
 from .evolution import EvolutionClient
 from .store import MemoryStore
 from .rules import reply_for, detect_intents
@@ -87,7 +87,9 @@ rl = RateLimiter(max_events=10, window_seconds=12)
 app.include_router(admin_web_router)
 app.include_router(portal_router)
 app.include_router(admin_router)
-if admin_bootstrap_router:
+_monitor_task: asyncio.Task | None = None
+
+if admin_bootstrap_router: 
     app.include_router(admin_bootstrap_router)
 if agent_push_router:
     app.include_router(agent_push_router)
@@ -204,6 +206,25 @@ async def metrics():
 
 @app.get("/status")
 async def status():
+    
+
+@app.on_event("startup")
+async def on_startup():
+    # cria tabelas (MVP)
+    Base.metadata.create_all(bind=engine)
+
+    global _monitor_task
+    _monitor_task = asyncio.create_task(monitor_loop())
+    logger.info("STARTUP_OK monitor_task=%s", bool(_monitor_task))
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    global _monitor_task
+    if _monitor_task:
+        _monitor_task.cancel()
+        _monitor_task = None  
+    
     """
     Endpoint de diagnóstico rápido.
     - DB check: usa get_last_leads() para validar conexão/queries.
