@@ -333,6 +333,7 @@ async def login_page(req: Request):
         "flash": flash,
         "login_action": _url(req, "admin_web_login_post"),
     }
+    
     return templates.TemplateResponse("login.html", ctx)
 
 
@@ -1139,8 +1140,8 @@ async def templates_new_page(req: Request):
 
     flash = _flash_from_query(req)
 
-    # template básico para ajudar a colar
-    example = {
+    # Exemplo base (mostra preenchido no textarea)
+    example_json = {
         "branding": {"name": "Atendimento"},
         "hours": {"mode": "business", "open": "08:00", "close": "18:00"},
         "messages": {
@@ -1151,7 +1152,13 @@ async def templates_new_page(req: Request):
             "handoff_ok": "Obrigado! ✅ Recebemos suas informações e um atendente vai falar com você em breve.",
             "handoff_retry": "Não consegui entender. Envie no formato:\n*Nome* - *Telefone* - *Assunto*",
         },
-        "menu": {"title": "Menu Principal", "options": [{"key": "1", "label": "Vendas", "reply": "Certo! O que você precisa?"}]},
+        "menu": {
+            "title": "Menu Principal",
+            "options": [
+                {"key": "1", "label": "Vendas", "reply": "Certo! O que você precisa?"},
+                {"key": "2", "label": "Suporte", "reply": "Beleza! Me diga qual o problema."},
+            ],
+        },
         "handoff": {"keyword": "atendente", "capture_lead": True},
     }
 
@@ -1159,9 +1166,12 @@ async def templates_new_page(req: Request):
         "request": req,
         "active_nav": "templates",
         "flash": flash,
-        "create_action": _url(req, "admin_web_templates_create"),
-        "example_json": json.dumps(example, ensure_ascii=False, indent=2),
         "back_url": _url(req, "admin_web_templates"),
+        "create_action": _url(req, "admin_web_templates_create"),
+        # ✅ IMPORTANTES (evita UndefinedError)
+        "form": {"name": "", "niche": "", "kind": "", "description": ""},
+        "rules_text": "",
+        "example_json": json.dumps(example_json, ensure_ascii=False, indent=2),
     }
     return templates.TemplateResponse("template_new.html", ctx)
 
