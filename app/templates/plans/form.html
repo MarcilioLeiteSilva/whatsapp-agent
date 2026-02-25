@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}{% if is_edit %}Editar Plano{% else %}Criar Plano{% endif %}{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">
+        {% if is_edit %}Editar plano{% else %}Criar plano{% endif %}
+      </h1>
+      <p class="text-sm text-slate-600 mt-1">
+        Defina o plano e suas features. As features serão usadas para calcular benefícios efetivos do agente.
+      </p>
+    </div>
+
+    <a href="{{ url_for('admin_web_plans') }}"
+       class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-50">
+      Voltar
+    </a>
+  </div>
+
+  <form method="post" class="mt-6 space-y-6">
+    <div class="bg-white rounded-2xl shadow-soft border border-slate-200 p-4 md:p-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="text-sm font-semibold text-slate-800">ID do plano</label>
+          <input name="id"
+                 value="{{ plan.id if plan else '' }}"
+                 {% if is_edit %}readonly{% endif %}
+                 placeholder="ex: basic, pro, enterprise"
+                 class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 {% if is_edit %}bg-slate-50 text-slate-600{% endif %}">
+          <div class="mt-1 text-xs text-slate-500">Usado como chave (não mude depois).</div>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-slate-800">Nome</label>
+          <input name="name"
+                 value="{{ plan.name if plan else '' }}"
+                 placeholder="Nome do plano"
+                 class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="inline-flex items-center gap-2 mt-2">
+            <input type="checkbox" name="is_active" value="1" {% if plan and plan.is_active %}checked{% elif not plan %}checked{% endif %}
+                   class="rounded border-slate-300">
+            <span class="text-sm font-semibold">Plano ativo</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-soft border border-slate-200 p-4 md:p-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-sm font-semibold">Features do plano</div>
+          <div class="text-xs text-slate-500 mt-1">Use chave + valor (JSON válido). Ex: <span class="font-mono">true</span>, <span class="font-mono">10</span>, <span class="font-mono">{"limit":5000}</span></div>
+        </div>
+        <button type="button" onclick="addRow()"
+                class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold hover:bg-slate-50">
+          + Adicionar feature
+        </button>
+      </div>
+
+      <div class="mt-4 overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-slate-600">
+            <tr>
+              <th class="text-left px-3 py-2 font-semibold w-64">Key</th>
+              <th class="text-left px-3 py-2 font-semibold">Value (JSON)</th>
+              <th class="text-right px-3 py-2 font-semibold w-24">Ação</th>
+            </tr>
+          </thead>
+          <tbody id="featuresBody" class="divide-y divide-slate-100">
+            {% if features %}
+              {% for k,v in features.items() %}
+              <tr>
+                <td class="px-3 py-2">
+                  <input name="feature_key" value="{{ k }}"
+                         class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                </td>
+                <td class="px-3 py-2">
+                  <input name="feature_value" value="{{ v|tojson }}"
+                         class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono">
+                </td>
+                <td class="px-3 py-2 text-right">
+                  <button type="button" onclick="removeRow(this)"
+                          class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold hover:bg-slate-50">
+                    Remover
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <!-- defaults úteis -->
+              <tr>
+                <td class="px-3 py-2">
+                  <input name="feature_key" value="allow_agent_overrides"
+                         class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                </td>
+                <td class="px-3 py-2">
+                  <input name="feature_value" value="false"
+                         class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono">
+                </td>
+                <td class="px-3 py-2 text-right">
+                  <button type="button" onclick="removeRow(this)"
+                          class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold hover:bg-slate-50">
+                    Remover
+                  </button>
+                </td>
+              </tr>
+              <tr>
+                <td class="px-3 py-2">
+                  <input name="feature_key" value="max_agents"
+                         class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                </td>
+                <td class="px-3 py-2">
+                  <input name="feature_value" value="1"
+                         class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono">
+                </td>
+                <td class="px-3 py-2 text-right">
+                  <button type="button" onclick="removeRow(this)"
+                          class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold hover:bg-slate-50">
+                    Remover
+                  </button>
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-2">
+      <button type="submit"
+              class="rounded-xl bg-slate-900 text-white px-5 py-2.5 text-sm font-semibold shadow-soft hover:opacity-95">
+        Salvar
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+  function addRow() {
+    const tbody = document.getElementById("featuresBody");
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="px-3 py-2">
+        <input name="feature_key" value=""
+               class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="ex: ai_enabled">
+      </td>
+      <td class="px-3 py-2">
+        <input name="feature_value" value="true"
+               class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono" placeholder='ex: true | 10 | {"limit":5000}'>
+      </td>
+      <td class="px-3 py-2 text-right">
+        <button type="button" onclick="removeRow(this)"
+                class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold hover:bg-slate-50">
+          Remover
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  function removeRow(btn) {
+    const tr = btn.closest("tr");
+    if (tr) tr.remove();
+  }
+</script>
+{% endblock %}
