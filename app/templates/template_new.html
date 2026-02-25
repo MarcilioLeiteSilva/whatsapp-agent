@@ -1,36 +1,39 @@
-<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>Novo Template</title></head>
-<body>
-  <h2>➕ Inserir Template</h2>
+{% extends "base.html" %}
 
-  {% if flash %}
-    <p><b>{{ flash.kind }}:</b> {{ flash.message }}</p>
-  {% endif %}
+{% block content %}
 
-  <form method="post" action="{{ create_action }}">
-    <p><label>Nome*</label><br/>
-      <input name="name" style="width: 420px;" required />
-    </p>
+<h2>➕ Inserir Template</h2>
 
-    <p><label>Nicho</label><br/>
-      <input name="niche" placeholder="ex: placas, viagens, clínica..." style="width: 420px;" />
-    </p>
+<form method="post" action="{{ create_action }}">
 
-    <p><label>Tipo</label><br/>
-      <input name="kind" placeholder="ex: atendimento, vendas, suporte" style="width: 420px;" />
-    </p>
+  <div class="form-group">
+    <label>Nome*</label>
+    <input name="name" class="form-control" required>
+  </div>
 
-    <p><label>Descrição</label><br/>
-      <input name="description" style="width: 600px;" />
-    </p>
+  <div class="form-group">
+    <label>Nicho</label>
+    <input name="niche" class="form-control">
+  </div>
 
-    <p><label>JSON de Regras*</label><br/>
-      <textarea name="rules_text" rows="22" cols="100">{{ example_json }}</textarea>
-    </p>
+  <div class="form-group">
+    <label>Tipo</label>
+    <input name="kind" class="form-control">
+  </div>
 
-    <button type="submit">Salvar Template</button>
-    <a href="{{ back_url }}"><button type="button">Voltar</button></a>
-  </form>
-</body>
-</html>
+  <div class="form-group">
+    <label>Descrição</label>
+    <input name="description" class="form-control">
+  </div>
+
+  <div class="form-group">
+    <label>JSON de Regras*</label>
+    <textarea name="rules_text" rows="20" class="form-control">{{ example_json }}</textarea>
+  </div>
+
+  <button type="submit" class="btn btn-success">Salvar</button>
+  <a href="{{ back_url }}" class="btn btn-secondary">Voltar</a>
+
+</form>
+
+{% endblock %}
