@@ -1,15 +1,12 @@
 # app/models.py
 from __future__ import annotations
 
-from sqlalchemy import Column, Text, TIMESTAMP, ForeignKey, Integer, BigInteger
+from sqlalchemy import Column, Text, TIMESTAMP, ForeignKey, Integer, BigInteger, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.schema import Identity
 from .db import Base
-
-
-
 
 
 class Client(Base):
@@ -23,6 +20,7 @@ class Client(Base):
     login_token = Column(Text)
     login_token_created_at = Column(TIMESTAMP(timezone=True))
     login_token_last_used_at = Column(TIMESTAMP(timezone=True))
+
 
 class RuleTemplate(Base):
     __tablename__ = "rule_templates"
@@ -61,7 +59,10 @@ class Agent(Base):
 
 class Lead(Base):
     __tablename__ = "leads"
-    id = Column(Text, primary_key=True)
+
+    # ✅ BIGINT Identity gerado no Postgres
+    id = Column(BigInteger, Identity(always=False), primary_key=True)
+
     client_id = Column(Text, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
     agent_id = Column(Text, ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
 
@@ -75,12 +76,14 @@ class Lead(Base):
     status = Column(Text)
     origem = Column(Text)
 
-    # ✅ campos que seu lead_logger já está tentando usar
     first_seen_at = Column(TIMESTAMP(timezone=True), nullable=True)
-    lead_saved = Column(Integer, nullable=False, server_default="0")  # ou Boolean, ver nota abaixo
-    
+
+    # ✅ use Boolean (recomendado)
+    lead_saved = Column(Boolean, nullable=False, server_default="false")
+
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
 
 class AgentCheck(Base):
     """
@@ -89,9 +92,7 @@ class AgentCheck(Base):
     """
     __tablename__ = "agent_checks"
 
-    # BIGSERIAL (Postgres) via Identity()
     id = Column(BigInteger, Identity(always=False), primary_key=True)
-
     agent_id = Column(Text, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
 
     status = Column(Text, nullable=False, default="unknown")  # online|degraded|offline|unknown
