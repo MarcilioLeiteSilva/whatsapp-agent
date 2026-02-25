@@ -103,3 +103,22 @@ class AgentCheck(Base):
     checked_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
 
     agent = relationship("Agent", lazy="joined")
+
+    # app/models.py (adicione)
+
+class Plan(Base):
+    __tablename__ = "plans"
+    id = Column(Text, primary_key=True)
+    name = Column(Text, nullable=False)
+    is_active = Column(Boolean, nullable=False, server_default="true")
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+
+
+class PlanFeature(Base):
+    __tablename__ = "plan_features"
+    plan_id = Column(Text, ForeignKey("plans.id", ondelete="CASCADE"), primary_key=True)
+    key = Column(Text, primary_key=True)
+    value_json = Column(JSONB, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
