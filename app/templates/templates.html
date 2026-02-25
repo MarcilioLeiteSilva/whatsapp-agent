@@ -115,7 +115,7 @@
 
               <td class="px-5 py-4 text-right">
                 <a
-                  href="{{ t.view_url }}"
+                  href="{{ url_for('admin_web_template_view', template_id=t['id']) }}"
                   class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
                 >
                   👁️ Visualizar
