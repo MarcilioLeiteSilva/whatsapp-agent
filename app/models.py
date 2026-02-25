@@ -78,7 +78,8 @@ class Lead(Base):
     # ✅ campos que seu lead_logger já está tentando usar
     first_seen_at = Column(TIMESTAMP(timezone=True), nullable=True)
     lead_saved = Column(Integer, nullable=False, server_default="0")  # ou Boolean, ver nota abaixo
-
+    
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
 class AgentCheck(Base):
