@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Planos{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">Planos</h1>
+      <p class="text-sm text-slate-600 mt-1">Gerencie planos e benefícios (features) usados pelos agentes e clientes.</p>
+    </div>
+
+    <a href="{{ url_for('admin_web_plans_new') }}"
+       class="inline-flex items-center justify-center rounded-xl bg-slate-900 text-white px-4 py-2 text-sm font-semibold shadow-soft hover:opacity-95">
+      + Criar plano
+    </a>
+  </div>
+
+  <div class="mt-6 bg-white rounded-2xl shadow-soft border border-slate-200 overflow-hidden">
+    <div class="px-4 md:px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+      <div class="text-sm font-semibold">Planos existentes</div>
+      <div class="text-xs text-slate-500">{{ plans|length }} plano(s)</div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-slate-600">
+          <tr>
+            <th class="text-left px-4 md:px-6 py-3 font-semibold">ID</th>
+            <th class="text-left px-4 md:px-6 py-3 font-semibold">Nome</th>
+            <th class="text-left px-4 md:px-6 py-3 font-semibold">Status</th>
+            <th class="text-left px-4 md:px-6 py-3 font-semibold">Features</th>
+            <th class="text-right px-4 md:px-6 py-3 font-semibold">Ações</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for p in plans %}
+          <tr class="hover:bg-slate-50/60">
+            <td class="px-4 md:px-6 py-3 font-mono text-xs text-slate-700">{{ p.id }}</td>
+            <td class="px-4 md:px-6 py-3 font-semibold">{{ p.name }}</td>
+            <td class="px-4 md:px-6 py-3">
+              {% if p.is_active %}
+                <span class="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-2.5 py-1 text-xs font-semibold">
+                  Ativo
+                </span>
+              {% else %}
+                <span class="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2.5 py-1 text-xs font-semibold">
+                  Inativo
+                </span>
+              {% endif %}
+            </td>
+            <td class="px-4 md:px-6 py-3 text-slate-600">
+              {{ p.features_count }} feature(s)
+            </td>
+            <td class="px-4 md:px-6 py-3 text-right">
+              <div class="inline-flex items-center gap-2">
+                <a href="{{ url_for('admin_web_plans_edit', plan_id=p.id) }}"
+                   class="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold hover:bg-slate-50">
+                  Editar
+                </a>
+
+                <form method="post" action="{{ url_for('admin_web_plans_toggle', plan_id=p.id) }}">
+                  <button type="submit"
+                          class="rounded-xl px-3 py-1.5 text-xs font-semibold {% if p.is_active %}bg-slate-900 text-white hover:opacity-90{% else %}bg-emerald-600 text-white hover:opacity-90{% endif %}">
+                    {% if p.is_active %}Desativar{% else %}Ativar{% endif %}
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+
+          {% if plans|length == 0 %}
+          <tr>
+            <td class="px-6 py-10 text-center text-slate-500" colspan="5">
+              Nenhum plano cadastrado. Clique em <b>Criar plano</b> para começar.
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
