@@ -353,6 +353,21 @@ async def webhook(req: Request):
     ctx = {"client_id": client_id, "agent_id": agent_id, "instance": instance}
     reply = reply_for(number, text, state, ctx=ctx)
 
+    # AI assist
+
+    agent_rules = getattr(agent, "rules_json", None)  # se você tiver carregado no objeto agent do DB
+
+    # Se reply veio do rules, melhora o texto
+    if reply:
+        reply = await ai_assist_reply(user_text=text, base_reply=reply, agent_rules=agent_rules)
+
+    # Se reply for fallback padrão (ex: "Não entendi..."), você pode trocar por IA:
+    if reply and "Não entendi" in reply:
+        ai_fb = await ai_fallback_reply(user_text=text, agent_rules=agent_rules)
+        if ai_fb:
+            reply = ai_fb
+    
+    
     # ADMIN: #leads
     if (text or "").strip().lower() == "#leads":
         if not ADMIN_NUMBER or number != ADMIN_NUMBER:
