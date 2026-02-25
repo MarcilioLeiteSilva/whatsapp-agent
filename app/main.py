@@ -353,6 +353,18 @@ async def webhook(req: Request):
     ctx = {"client_id": client_id, "agent_id": agent_id, "instance": instance}
     reply = reply_for(number, text, state, ctx=ctx)
 
+    normalized = (text or "").strip().lower()
+
+    if "atendente" in normalized:
+        # não passa pela IA
+        pass
+    else:
+        reply = await ai_assist_reply(
+            user_text=text,
+            base_reply=reply,
+            agent_rules=getattr(agent, "rules_json", None),
+    )
+
     # AI assist
 
     agent_rules = getattr(agent, "rules_json", None)  # se você tiver carregado no objeto agent do DB
