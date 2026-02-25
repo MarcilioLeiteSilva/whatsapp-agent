@@ -7,7 +7,7 @@ from .monitoring import monitor_loop
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-
+from .ai_service import ai_assist_reply, ai_fallback_reply
 from .admin_web import router as admin_web_router
 from .portal_web import router as portal_router
 from .admin import router as admin_router
