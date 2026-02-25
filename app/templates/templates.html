@@ -1,96 +1,133 @@
 {% extends "base.html" %}
+{% block title %}Templates{% endblock %}
+
 {% block content %}
+<div class="max-w-6xl mx-auto">
 
-<style>
-  .page-wrap { max-width: 1100px; margin: 0 auto; padding: 16px 18px; }
-  .page-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-  .page-title { display:flex; align-items:center; gap:10px; }
-  .muted { opacity:.75; font-size: 13px; }
-  .toolbar { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
-  .search { display:flex; gap:8px; align-items:center; }
-  .search input { width: 320px; max-width: 70vw; }
-  .badge { display:inline-block; padding:3px 8px; border-radius: 999px; font-size: 12px; border:1px solid #e5e7eb; background:#f9fafb; }
-  .row-actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap: wrap; }
-  .table td, .table th { vertical-align: middle; }
-</style>
-
-<div class="page-wrap">
-  <div class="page-head">
-    <div class="page-title">
-      <h2 style="margin:0;">📚 Templates</h2>
-      <span class="muted">Biblioteca de regras prontas para aplicar em agentes</span>
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div>
+      <h1 class="text-xl md:text-2xl font-semibold text-slate-900">📚 Templates</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Biblioteca de regras prontas para aplicar em agentes.
+      </p>
     </div>
 
-    <div class="toolbar">
-      <form method="get" class="search" action="{{ list_url }}">
-        <input class="form-control" name="q" value="{{ q }}" placeholder="Buscar por nome/nicho/tipo..." />
-        <button class="btn btn-secondary" type="submit">Buscar</button>
+    <div class="flex items-center gap-2">
+      <form method="get" action="{{ url_for('admin_web_templates') }}" class="flex items-center gap-2">
+        <div class="relative">
+          <input
+            name="q"
+            value="{{ q or '' }}"
+            placeholder="Buscar por nome, nicho, tipo..."
+            class="w-[280px] max-w-[70vw] rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
+          />
+          <span class="absolute right-3 top-2.5 text-slate-400 text-sm">⌕</span>
+        </div>
+        <button
+          type="submit"
+          class="rounded-xl px-4 py-2 text-sm font-semibold bg-slate-900 text-white hover:bg-slate-800"
+        >
+          Buscar
+        </button>
       </form>
 
-      <a class="btn btn-primary" href="{{ new_url }}">➕ Inserir Template</a>
+      <a
+        href="{{ url_for('admin_web_templates_new') }}"
+        class="rounded-xl px-4 py-2 text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500"
+      >
+        ➕ Inserir Template
+      </a>
     </div>
   </div>
 
-  {% if flash %}
-    <div class="alert alert-{{ flash.kind }}" style="margin-top:12px;">
-      {{ flash.message }}
-    </div>
-  {% endif %}
-
-  <div class="card" style="margin-top:12px;">
-    <div class="card-body">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
-        <div class="muted">
-          Total: <b>{{ templates|length }}</b>
-          {% if q %} • Filtro: <b>{{ q }}</b>{% endif %}
-        </div>
-        <div class="muted">
-          Dica: crie templates por nicho (ex.: Veterinária, Viagens, Placas) e tipo (Vendas, Suporte, Informações).
-        </div>
+  <!-- Info bar -->
+  <div class="mt-5 rounded-2xl border border-slate-200 bg-white shadow-soft">
+    <div class="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+      <div class="text-sm text-slate-600">
+        Total: <span class="font-semibold text-slate-900">{{ templates|length }}</span>
+        {% if q %} • Filtro: <span class="font-semibold text-slate-900">{{ q }}</span>{% endif %}
       </div>
+      <div class="text-xs text-slate-500">
+        Sugestão: padronize <b>nicho</b> (segmento) e <b>tipo</b> (vendas/suporte/info).
+      </div>
+    </div>
+  </div>
 
-      <div style="margin-top:12px; overflow:auto;">
-        <table class="table" style="min-width: 900px;">
-          <thead>
+  <!-- Table -->
+  <div class="mt-4 rounded-2xl border border-slate-200 bg-white shadow-soft overflow-hidden">
+    <div class="overflow-auto">
+      <table class="min-w-[980px] w-full text-sm">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr class="text-left text-slate-600">
+            <th class="px-5 py-3 font-semibold">Nome</th>
+            <th class="px-5 py-3 font-semibold">Nicho</th>
+            <th class="px-5 py-3 font-semibold">Tipo</th>
+            <th class="px-5 py-3 font-semibold">Descrição</th>
+            <th class="px-5 py-3 font-semibold">Atualizado</th>
+            <th class="px-5 py-3 font-semibold text-right">Ações</th>
+          </tr>
+        </thead>
+
+        <tbody class="divide-y divide-slate-100">
+          {% if not templates %}
             <tr>
-              <th>Nome</th>
-              <th>Nicho</th>
-              <th>Tipo</th>
-              <th>Descrição</th>
-              <th>Atualizado</th>
-              <th style="text-align:right;">Ações</th>
+              <td colspan="6" class="px-5 py-6 text-slate-500">
+                Nenhum template encontrado.
+              </td>
             </tr>
-          </thead>
+          {% endif %}
 
-          <tbody>
-            {% if not templates %}
-              <tr>
-                <td colspan="6" class="muted">Nenhum template encontrado.</td>
-              </tr>
-            {% endif %}
+          {% for t in templates %}
+            <tr class="hover:bg-slate-50/60">
+              <td class="px-5 py-4">
+                <div class="font-semibold text-slate-900">{{ t.name }}</div>
+                <div class="text-xs text-slate-500">{{ t.id }}</div>
+              </td>
 
-            {% for t in templates %}
-              <tr>
-                <td><b>{{ t.name }}</b></td>
-                <td>{% if t.niche %}<span class="badge">{{ t.niche }}</span>{% else %}-{% endif %}</td>
-                <td>{% if t.kind %}<span class="badge">{{ t.kind }}</span>{% else %}-{% endif %}</td>
-                <td class="muted" style="max-width: 360px; white-space: nowrap; overflow:hidden; text-overflow: ellipsis;">
-                  {{ t.description or '-' }}
-                </td>
-                <td class="muted">{{ t.updated_at or '-' }}</td>
-                <td style="text-align:right;">
-                  <div class="row-actions">
-                    <a class="btn btn-sm btn-outline-primary" href="{{ t.view_url }}">👁️ Visualizar</a>
-                  </div>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+              <td class="px-5 py-4">
+                {% if t.niche %}
+                  <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
+                    {{ t.niche }}
+                  </span>
+                {% else %}
+                  <span class="text-slate-400">-</span>
+                {% endif %}
+              </td>
 
+              <td class="px-5 py-4">
+                {% if t.kind %}
+                  <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
+                    {{ t.kind }}
+                  </span>
+                {% else %}
+                  <span class="text-slate-400">-</span>
+                {% endif %}
+              </td>
+
+              <td class="px-5 py-4 text-slate-600 max-w-[360px]">
+                <div class="truncate">{{ t.description or '-' }}</div>
+              </td>
+
+              <td class="px-5 py-4 text-slate-600">
+                {{ t.updated_at or '-' }}
+              </td>
+
+              <td class="px-5 py-4 text-right">
+                <a
+                  href="{{ t.view_url }}"
+                  class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                >
+                  👁️ Visualizar
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+
+      </table>
     </div>
   </div>
-</div>
 
+</div>
 {% endblock %}
