@@ -44,7 +44,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .db import SessionLocal
 from .models import Client, Agent, Lead, AgentCheck, RuleTemplate
-
+from .admin_web_plans import router as plans_router
 from .store import MemoryStore
 from .rules import reply_for, detect_intents
 from .lead_logger import ensure_first_contact, mark_intent, save_handoff_lead, get_agent_by_instance
@@ -59,6 +59,7 @@ logger = logging.getLogger("agent")
 
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 router = APIRouter(prefix="/admin/web", tags=["admin_web"])
+router.include_router(plans_router)
 
 # ENV
 ALLOW_SIMULATOR = os.getenv("ALLOW_SIMULATOR", "false").strip().lower() in ("1", "true", "yes", "y")
