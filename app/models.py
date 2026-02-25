@@ -21,6 +21,9 @@ class Client(Base):
     login_token_created_at = Column(TIMESTAMP(timezone=True))
     login_token_last_used_at = Column(TIMESTAMP(timezone=True))
 
+    # plan
+    plan_id = Column(Text, ForeignKey("plans.id"), nullable=True)
+
 
 class RuleTemplate(Base):
     __tablename__ = "rule_templates"
@@ -53,6 +56,10 @@ class Agent(Base):
     # rules_json (JSONB)
     rules_json = Column(JSONB, nullable=True)
     rules_updated_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+    # Features
+    features_override = Column(JSONB, nullable=True)
+    features_override_updated_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
     client = relationship("Client", lazy="joined")
 
@@ -104,7 +111,6 @@ class AgentCheck(Base):
 
     agent = relationship("Agent", lazy="joined")
 
-    # app/models.py (adicione)
 
 class Plan(Base):
     __tablename__ = "plans"
