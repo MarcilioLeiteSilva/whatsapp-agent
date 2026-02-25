@@ -1,48 +1,96 @@
 {% extends "base.html" %}
-
 {% block content %}
 
-<h2>📚 Templates de Regras</h2>
+<style>
+  .page-wrap { max-width: 1100px; margin: 0 auto; padding: 16px 18px; }
+  .page-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .page-title { display:flex; align-items:center; gap:10px; }
+  .muted { opacity:.75; font-size: 13px; }
+  .toolbar { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+  .search { display:flex; gap:8px; align-items:center; }
+  .search input { width: 320px; max-width: 70vw; }
+  .badge { display:inline-block; padding:3px 8px; border-radius: 999px; font-size: 12px; border:1px solid #e5e7eb; background:#f9fafb; }
+  .row-actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap: wrap; }
+  .table td, .table th { vertical-align: middle; }
+</style>
 
-{% if flash %}
-  <div class="alert alert-{{ flash.kind }}">
-    {{ flash.message }}
+<div class="page-wrap">
+  <div class="page-head">
+    <div class="page-title">
+      <h2 style="margin:0;">📚 Templates</h2>
+      <span class="muted">Biblioteca de regras prontas para aplicar em agentes</span>
+    </div>
+
+    <div class="toolbar">
+      <form method="get" class="search" action="{{ list_url }}">
+        <input class="form-control" name="q" value="{{ q }}" placeholder="Buscar por nome/nicho/tipo..." />
+        <button class="btn btn-secondary" type="submit">Buscar</button>
+      </form>
+
+      <a class="btn btn-primary" href="{{ new_url }}">➕ Inserir Template</a>
+    </div>
   </div>
-{% endif %}
 
-<form method="get">
-  <input name="q" value="{{ q }}" placeholder="Buscar..." />
-  <button type="submit">Buscar</button>
-  <a href="{{ create_template_url }}" class="btn btn-primary">+ Inserir template</a>
-</form>
+  {% if flash %}
+    <div class="alert alert-{{ flash.kind }}" style="margin-top:12px;">
+      {{ flash.message }}
+    </div>
+  {% endif %}
 
-<hr>
+  <div class="card" style="margin-top:12px;">
+    <div class="card-body">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div class="muted">
+          Total: <b>{{ templates|length }}</b>
+          {% if q %} • Filtro: <b>{{ q }}</b>{% endif %}
+        </div>
+        <div class="muted">
+          Dica: crie templates por nicho (ex.: Veterinária, Viagens, Placas) e tipo (Vendas, Suporte, Informações).
+        </div>
+      </div>
 
-<table class="table">
-  <thead>
-    <tr>
-      <th>Nome</th>
-      <th>Nicho</th>
-      <th>Tipo</th>
-      <th>Atualizado</th>
-      <th>Ações</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for t in templates %}
-    <tr>
-      <td>{{ t.name }}</td>
-      <td>{{ t.niche or '-' }}</td>
-      <td>{{ t.kind or '-' }}</td>
-      <td>{{ t.updated_at or '-' }}</td>
-      <td>
-        <a href="/admin/web/templates/{{ t.id }}" class="btn btn-sm btn-outline-primary">
-          Visualizar
-        </a>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+      <div style="margin-top:12px; overflow:auto;">
+        <table class="table" style="min-width: 900px;">
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>Nicho</th>
+              <th>Tipo</th>
+              <th>Descrição</th>
+              <th>Atualizado</th>
+              <th style="text-align:right;">Ações</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {% if not templates %}
+              <tr>
+                <td colspan="6" class="muted">Nenhum template encontrado.</td>
+              </tr>
+            {% endif %}
+
+            {% for t in templates %}
+              <tr>
+                <td><b>{{ t.name }}</b></td>
+                <td>{% if t.niche %}<span class="badge">{{ t.niche }}</span>{% else %}-{% endif %}</td>
+                <td>{% if t.kind %}<span class="badge">{{ t.kind }}</span>{% else %}-{% endif %}</td>
+                <td class="muted" style="max-width: 360px; white-space: nowrap; overflow:hidden; text-overflow: ellipsis;">
+                  {{ t.description or '-' }}
+                </td>
+                <td class="muted">{{ t.updated_at or '-' }}</td>
+                <td style="text-align:right;">
+                  <div class="row-actions">
+                    <a class="btn btn-sm btn-outline-primary" href="{{ t.view_url }}">👁️ Visualizar</a>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
 
 {% endblock %}
