@@ -4,12 +4,17 @@ from datetime import datetime
 import pytz
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
-
 from .lead_logger import get_last_leads
+from .admin_plans import router as admin_plans_router
+from .admin_clients import router as admin_clients_router
+from .admin_agents_features import router as admin_agents_features_router
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
 router = APIRouter()
+router.include_router(admin_plans_router)
+router.include_router(admin_clients_router)
+router.include_router(admin_agents_features_router)
 
 BR_TZ = pytz.timezone("America/Sao_Paulo")
 
