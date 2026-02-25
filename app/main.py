@@ -1,13 +1,24 @@
+# app/main.py
+from __future__ import annotations
+
 import os
 import time
 import logging
-import httpx
 import asyncio
-from .monitoring import monitor_loop
+from typing import Any, Tuple
+
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+
+from .monitoring import monitor_loop
+from .evolution import EvolutionClient
+from .store import MemoryStore
+from .rules import reply_for, detect_intents
 from .ai_service import ai_assist_reply, ai_fallback_reply
+from .ai_guard import ai_should_run
+
 from .admin_web import router as admin_web_router
 from .portal_web import router as portal_router
 from .admin import router as admin_router
@@ -18,9 +29,6 @@ try:
 except Exception:
     agent_push_router = None
 
-from .evolution import EvolutionClient
-from .store import MemoryStore
-from .rules import reply_for, detect_intents
 from .lead_logger import (
     ensure_first_contact,
     mark_intent,
@@ -85,10 +93,20 @@ if admin_bootstrap_router:
 
 
 @app.on_event("startup")
-async def on_startup():
-    # DEV-only: cria tabelas automaticamente se você adotou db_init.py
+async def on_startup() -> None:
+    # DEV-only: cria tabelas automaticamente se existir
     if init_db_if_dev:
-        init_db_if_dev()
+        try:
+            init_db_if_dev()
+        except Exception as e:
+            logger.warning("DB_INIT_WARN: %s", e)
+
+    # dispara o monitor em background
+    try:
+        asyncio.create_task(monitor_loop())
+        logger.info("MONITOR_TASK_SCHEDULED")
+    except Exception as e:
+        logger.warning("MONITOR_TASK_WARN: %s", e)
 
 
 # -----------------------------------------------------------------------------
@@ -134,7 +152,7 @@ def extract_text(msg: dict) -> str:
     return ""
 
 
-def extract_payload(payload: dict):
+def extract_payload(payload: dict) -> Tuple[str, str, str, str, bool, bool, str, str]:
     """
     Normaliza payload do webhook da Evolution (e variações) para:
     instance, message_id, from_number, text, from_me, is_group, event, status
@@ -181,16 +199,6 @@ def extract_payload(payload: dict):
 # -----------------------------------------------------------------------------
 # Basic endpoints
 # -----------------------------------------------------------------------------
-@app.on_event("startup")
-async def on_startup():
-    if init_db_if_dev:
-        init_db_if_dev()
-
-    # dispara o monitor em background
-    asyncio.create_task(monitor_loop())
-    logger.info("MONITOR_TASK_SCHEDULED")
-
-
 @app.get("/")
 async def root():
     return {"ok": True}
@@ -234,11 +242,10 @@ async def status():
                 from .models import Agent
 
                 with SessionLocal() as db:
-                    a = db.execute(
-                        select(Agent)
-                        .where(Agent.evolution_base_url.is_not(None))
-                        .limit(1)
-                    ).scalar_one_or_none()
+                    a = (
+                        db.execute(select(Agent).where(Agent.evolution_base_url.is_not(None)).limit(1))
+                        .scalar_one_or_none()
+                    )
 
                 if a and (a.evolution_base_url or "").strip():
                     base = (a.evolution_base_url or "").strip().rstrip("/")
@@ -305,9 +312,7 @@ async def webhook(req: Request):
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "update"}
 
-    if status in {
-        "ACK", "READ", "DELIVERED", "DELIVERED_TO_DEVICE", "SERVER_ACK", "DELIVERY_ACK",
-    } and not text:
+    if status in {"ACK", "READ", "DELIVERED", "DELIVERED_TO_DEVICE", "SERVER_ACK", "DELIVERY_ACK"} and not text:
         WEBHOOK_IGNORED.labels("ack/status_no_text").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "ack/status_no_text"}
@@ -334,68 +339,7 @@ async def webhook(req: Request):
 
     MSG_PROCESSED.inc()
 
-    # Captura automática: primeiro contato + intenção
-    try:
-        ensure_first_contact(client_id=client_id, agent_id=agent_id, instance=instance, from_number=number)
-        LEAD_FIRST_CONTACT.inc()
-
-        intents = detect_intents(text)
-        if intents:
-            mark_intent(client_id=client_id, agent_id=agent_id, instance=instance, from_number=number, intents=intents)
-            LEAD_INTENT_MARKED.inc()
-    except Exception as e:
-        logger.error("LEAD_CAPTURE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
-
-    # Estado da conversa
-    state_key = f"{agent_id}:{number}"
-    state = store.get_state(state_key)
-
-    ctx = {"client_id": client_id, "agent_id": agent_id, "instance": instance}
-    reply = reply_for(number, text, state, ctx=ctx)
-
-
-    from .ai_guard import ai_should_run
-    from .ai_service import ai_assist_reply
-
-
-    # se pausado
-    if reply is None:
-        return {"ok": True, "paused": True}
-
-    allowed, reason = ai_should_run(
-        user_text=text,
-        base_reply=reply,
-        state=state,
-        paused=False,
-    )
-
-    if allowed:
-        reply = await ai_assist_reply(
-            user_text=text,
-            base_reply=reply,
-            agent_rules=getattr(agent, "rules_json", None),
-        )
-    else:
-        # opcional: log para debug
-        logger.info("AI_GUARD_SKIP: reason=%s instance=%s from=%s", reason, instance, number)
-    
-
-    # AI assist
-
-    agent_rules = getattr(agent, "rules_json", None)  # se você tiver carregado no objeto agent do DB
-
-    # Se reply veio do rules, melhora o texto
-    if reply:
-        reply = await ai_assist_reply(user_text=text, base_reply=reply, agent_rules=agent_rules)
-
-    # Se reply for fallback padrão (ex: "Não entendi..."), você pode trocar por IA:
-    if reply and "Não entendi" in reply:
-        ai_fb = await ai_fallback_reply(user_text=text, agent_rules=agent_rules)
-        if ai_fb:
-            reply = ai_fb
-    
-    
-    # ADMIN: #leads
+    # ADMIN: #leads (processa cedo, antes do rules)
     if (text or "").strip().lower() == "#leads":
         if not ADMIN_NUMBER or number != ADMIN_NUMBER:
             WEBHOOK_IGNORED.labels("admin_unauthorized").inc()
@@ -459,25 +403,65 @@ async def webhook(req: Request):
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True}
 
-    # Log de reply
-    logger.info(
-        "RULES_REPLY: client_id=%s agent_id=%s instance=%s from=%s reply=%r step=%s",
-        client_id, agent_id, instance, number, reply, (state or {}).get("step"),
-    )
+    # Captura automática: primeiro contato + intenção
+    try:
+        ensure_first_contact(client_id=client_id, agent_id=agent_id, instance=instance, from_number=number)
+        LEAD_FIRST_CONTACT.inc()
 
-    # Pausado/handoff
+        intents = detect_intents(text)
+        if intents:
+            mark_intent(client_id=client_id, agent_id=agent_id, instance=instance, from_number=number, intents=intents)
+            LEAD_INTENT_MARKED.inc()
+    except Exception as e:
+        logger.error("LEAD_CAPTURE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
+
+    # Estado da conversa
+    state_key = f"{agent_id}:{number}"
+    state = store.get_state(state_key)
+
+    # Rules
+    ctx = {"client_id": client_id, "agent_id": agent_id, "instance": instance}
+    reply = reply_for(number, text, state, ctx=ctx)
+
+    # Pausado/handoff (não envia msg)
     if reply is None:
         WEBHOOK_IGNORED.labels("paused").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "paused": True}
 
+    # ------------------------------
+    # AI (assistive + fallback) - SINGLE PASS
+    # ------------------------------
+    agent_rules = getattr(agent, "rules_json", None)
+
+    allowed, reason = ai_should_run(
+        user_text=text,
+        base_reply=reply,
+        state=state,
+        paused=False,
+    )
+
+    if allowed:
+        reply = await ai_assist_reply(
+            user_text=text,
+            base_reply=reply,
+            agent_rules=agent_rules,
+        )
+    else:
+        logger.info(
+            "AI_GUARD_SKIP: reason=%s instance=%s from=%s step=%s",
+            reason, instance, number, (state or {}).get("step"),
+        )
+
+    # Fallback IA: só se o rules devolveu fallback padrão
+    if reply and "Não entendi" in reply:
+        ai_fb = await ai_fallback_reply(user_text=text, agent_rules=agent_rules)
+        if ai_fb:
+            reply = ai_fb
+
     # Persistência do lead (uma vez)
     try:
-        if (
-            state.get("step") == "lead_captured"
-            and state.get("lead")
-            and not state.get("lead_saved")
-        ):
+        if state.get("step") == "lead_captured" and state.get("lead") and not state.get("lead_saved"):
             lead = state.get("lead") or {}
             nome = (lead.get("nome") or "").strip()
             telefone = (lead.get("telefone") or "").strip()
@@ -499,10 +483,10 @@ async def webhook(req: Request):
     except Exception as e:
         logger.error("LEAD_SAVE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
 
-    # Envio de resposta (por agente)
+    # Log + Envio
     logger.info(
-        "SEND_TEXT: client_id=%s agent_id=%s instance=%s to=%s chars=%s",
-        client_id, agent_id, instance, number, len(reply or ""),
+        "SEND_TEXT: client_id=%s agent_id=%s instance=%s to=%s chars=%s step=%s",
+        client_id, agent_id, instance, number, len(reply or ""), (state or {}).get("step"),
     )
 
     try:
@@ -514,7 +498,6 @@ async def webhook(req: Request):
             api_key=agent.api_key,
         )
         MSG_SENT_OK.inc()
-        logger.info("SEND_OK: client_id=%s agent_id=%s instance=%s to=%s", client_id, agent_id, instance, number)
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "sent": True}
     except Exception as e:
