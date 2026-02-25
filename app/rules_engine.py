@@ -1,3 +1,4 @@
+# app/rules_engine.py
 from __future__ import annotations
 
 import time
@@ -19,8 +20,7 @@ class AgentRules:
 
 # cache simples por agent_id (DEV ok)
 _CACHE: dict[str, tuple[float, dict]] = {}
-_CACHE_TTL_SECONDS = 0  # curto: permite editar no painel e refletir rápido
-
+_CACHE_TTL_SECONDS = 0  # 0 = sempre reflete mudanças (sem TTL)
 
 def _now() -> float:
     return time.time()
@@ -30,20 +30,20 @@ def load_rules_for_agent(agent_id: str) -> dict:
     if not agent_id:
         return {}
 
-    # se estiver em cache, usa
     hit = _CACHE.get(agent_id)
     if hit:
-        return hit[1]
+        # TTL opcional (aqui 0, mas mantemos estrutura)
+        ts, rules = hit
+        if _CACHE_TTL_SECONDS <= 0 or (_now() - ts) <= _CACHE_TTL_SECONDS:
+            return rules
 
     with SessionLocal() as db:
-        a = db.execute(
-            select(Agent).where(Agent.id == agent_id).limit(1)
-        ).scalar_one_or_none()
+        a = db.execute(select(Agent).where(Agent.id == agent_id).limit(1)).scalar_one_or_none()
         rules = (getattr(a, "rules_json", None) or {}) if a else {}
 
     _CACHE[agent_id] = (_now(), rules)
     return rules
-    
+
 
 def invalidate_agent_rules(agent_id: str) -> None:
     _CACHE.pop(agent_id, None)
@@ -71,7 +71,6 @@ def in_business_hours(rules: dict) -> bool:
     if mode != "business":
         return True
 
-    # modo simples: HH:MM
     open_h = hours.get("open") or "08:00"
     close_h = hours.get("close") or "18:00"
 
@@ -130,12 +129,11 @@ def apply_rules(number: str, text: str, state: dict, rules: dict) -> Optional[st
         return get_text(
             rules,
             "messages.handoff_prompt",
-            "Perfeito! Para encaminhar para um atendente, envie:\n*Nome completo* *Telefone* *Assunto*\nOu em 1 linha: João Silva - 31999998888 - Transferência",
+            "Perfeito! Para encaminhar para um atendente, envie:\n*Nome* - *Telefone* - *Assunto*",
         )
 
     # Horário comercial
     if not in_business_hours(rules):
-        # fora do horário: se não está em coleta/handoff, responde off_hours
         if (state.get("step") or "") not in ("handoff_collect", "lead_captured"):
             return get_text(
                 rules,
@@ -150,7 +148,6 @@ def apply_rules(number: str, text: str, state: dict, rules: dict) -> Optional[st
 
     # Se está coletando lead pro handoff
     if state.get("step") == "handoff_collect":
-        # bem simples: aceita “3 campos separados por -”
         parts = [p.strip() for p in t.split("-")]
         if len(parts) >= 3:
             nome = parts[0]
@@ -174,7 +171,6 @@ def apply_rules(number: str, text: str, state: dict, rules: dict) -> Optional[st
     opt = match_menu_option(rules, t)
     if opt:
         state["step"] = f"menu:{opt.get('key')}"
-        # reply fixa ou ask
         reply = opt.get("reply") or opt.get("ask") or "Ok."
         return str(reply)
 
