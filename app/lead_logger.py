@@ -1,9 +1,10 @@
+#lead.logger.py
+
 import os
 import csv
 import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
-from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -134,7 +135,6 @@ def ensure_first_contact(
 
         if not lead:
             lead = Lead(
-                id=str(uuid4()),  # ✅ FIX: garante PK
                 client_id=cid,
                 agent_id=aid,
                 instance=inst,
@@ -185,7 +185,6 @@ def mark_intent(
 
         if not lead:
             lead = Lead(
-                id=str(uuid4()),  # ✅ FIX: garante PK
                 client_id=cid,
                 agent_id=aid,
                 instance=inst,
@@ -248,7 +247,6 @@ def save_handoff_lead(
 
         if not lead:
             lead = Lead(
-                id=str(uuid4()),  # ✅ FIX: garante PK
                 client_id=cid,
                 agent_id=aid,
                 instance=inst,
@@ -313,7 +311,7 @@ def get_last_leads(
     out: List[Dict[str, Any]] = []
     for r in rows:
         out.append({
-            "id": getattr(r, "id", None),  # ✅ FIX: id é TEXT, não int
+            "id": getattr(r, "id", None),  # ✅ BIGINT
             "client_id": getattr(r, "client_id", None),
             "agent_id": getattr(r, "agent_id", None),
             "instance": getattr(r, "instance", None),
