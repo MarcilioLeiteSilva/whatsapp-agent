@@ -5,7 +5,7 @@ import os
 import time
 import logging
 import asyncio
-from typing import Any, Tuple
+from typing import Any, Tuple, Dict, Optional
 
 import httpx
 from fastapi import FastAPI, Request
@@ -196,6 +196,13 @@ def extract_payload(payload: dict) -> Tuple[str, str, str, str, bool, bool, str,
     return instance, message_id, from_number, text, from_me, is_group, event, status
 
 
+def _safe_state(state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Garante que state seja sempre dict mutável."""
+    if isinstance(state, dict):
+        return state
+    return {}
+
+
 # -----------------------------------------------------------------------------
 # Basic endpoints
 # -----------------------------------------------------------------------------
@@ -349,7 +356,10 @@ async def webhook(req: Request):
         try:
             leads = get_last_leads(limit=5)
         except Exception as e:
-            logger.error("ADMIN_LEADS_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
+            logger.error(
+                "ADMIN_LEADS_ERROR: client_id=%s agent_id=%s instance=%s err=%s",
+                client_id, agent_id, instance, e
+            )
             try:
                 await evo.send_text(
                     number,
@@ -359,7 +369,10 @@ async def webhook(req: Request):
                     api_key=agent.api_key,
                 )
             except Exception as se:
-                logger.error("SEND_TEXT_ERROR(admin): client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, se)
+                logger.error(
+                    "SEND_TEXT_ERROR(admin): client_id=%s agent_id=%s instance=%s err=%s",
+                    client_id, agent_id, instance, se
+                )
             WEBHOOK_LATENCY.observe(time.time() - start)
             return {"ok": True}
 
@@ -373,7 +386,10 @@ async def webhook(req: Request):
                     api_key=agent.api_key,
                 )
             except Exception as se:
-                logger.error("SEND_TEXT_ERROR(admin): client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, se)
+                logger.error(
+                    "SEND_TEXT_ERROR(admin): client_id=%s agent_id=%s instance=%s err=%s",
+                    client_id, agent_id, instance, se
+                )
             WEBHOOK_LATENCY.observe(time.time() - start)
             return {"ok": True}
 
@@ -398,7 +414,10 @@ async def webhook(req: Request):
             MSG_SENT_OK.inc()
         except Exception as se:
             MSG_SENT_ERR.inc()
-            logger.error("SEND_TEXT_ERROR(admin): client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, se)
+            logger.error(
+                "SEND_TEXT_ERROR(admin): client_id=%s agent_id=%s instance=%s err=%s",
+                client_id, agent_id, instance, se
+            )
 
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True}
@@ -415,13 +434,19 @@ async def webhook(req: Request):
     except Exception as e:
         logger.error("LEAD_CAPTURE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
 
-    # Estado da conversa
+    # Estado da conversa (GARANTE dict)
     state_key = f"{agent_id}:{number}"
-    state = store.get_state(state_key)
+    state = _safe_state(store.get_state(state_key))
 
     # Rules
     ctx = {"client_id": client_id, "agent_id": agent_id, "instance": instance}
     reply = reply_for(number, text, state, ctx=ctx)
+
+    # IMPORTANTÍSSIMO: persistir o state mutado pelo rules engine
+    try:
+        store.set_state(state_key, state)
+    except Exception as e:
+        logger.warning("STATE_SAVE_WARN: key=%s err=%s", state_key, e)
 
     # Pausado/handoff (não envia msg)
     if reply is None:
@@ -460,12 +485,16 @@ async def webhook(req: Request):
             reply = ai_fb
 
     # Persistência do lead (uma vez)
+    # FIX: state agora é sempre dict e foi salvo; aqui garantimos que não perde.
     try:
-        if state.get("step") == "lead_captured" and state.get("lead") and not state.get("lead_saved"):
-            lead = state.get("lead") or {}
-            nome = (lead.get("nome") or "").strip()
-            telefone = (lead.get("telefone") or "").strip()
-            assunto = (lead.get("assunto") or "").strip()
+        step = (state.get("step") or "").strip()
+        lead_obj = state.get("lead") if isinstance(state.get("lead"), dict) else None
+        already_saved = bool(state.get("lead_saved"))
+
+        if step == "lead_captured" and lead_obj and not already_saved:
+            nome = (lead_obj.get("nome") or "").strip()
+            telefone = (lead_obj.get("telefone") or "").strip()
+            assunto = (lead_obj.get("assunto") or "").strip()
 
             save_handoff_lead(
                 client_id=client_id,
@@ -478,8 +507,19 @@ async def webhook(req: Request):
             )
 
             state["lead_saved"] = True
+            try:
+                store.set_state(state_key, state)
+            except Exception as se:
+                logger.warning("STATE_SAVE_WARN_AFTER_LEAD: key=%s err=%s", state_key, se)
+
             LEAD_SAVED.inc()
             logger.info("LEAD_SAVED: client_id=%s agent_id=%s instance=%s from=%s", client_id, agent_id, instance, number)
+        else:
+            # Log útil para diagnosticar por que não salvou
+            logger.info(
+                "LEAD_SAVE_SKIP: step=%s has_lead=%s lead_saved=%s",
+                step, bool(lead_obj), already_saved
+            )
     except Exception as e:
         logger.error("LEAD_SAVE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
 
