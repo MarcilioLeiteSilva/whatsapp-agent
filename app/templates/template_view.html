@@ -1,37 +1,107 @@
 {% extends "base.html" %}
-
 {% block content %}
 
-<h2>🔎 Template: {{ template.name }}</h2>
+<style>
+  .page-wrap { max-width: 1100px; margin: 0 auto; padding: 16px 18px; }
+  .page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .muted { opacity:.75; font-size: 13px; }
+  .badge { display:inline-block; padding:3px 8px; border-radius: 999px; font-size: 12px; border:1px solid #e5e7eb; background:#f9fafb; }
+  .grid { display:grid; grid-template-columns: 420px 1fr; gap: 14px; align-items:start; }
+  @media (max-width: 980px){ .grid { grid-template-columns: 1fr; } }
+  pre.code {
+    background:#0b1020;
+    color:#e5e7eb;
+    padding: 14px;
+    border-radius: 10px;
+    border:1px solid rgba(255,255,255,.08);
+    overflow:auto;
+    max-height: 540px;
+    white-space: pre;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .btn-row { display:flex; gap:10px; flex-wrap:wrap; }
+  .label { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+</style>
 
-<p>
-  <b>Nicho:</b> {{ template.niche or '-' }} |
-  <b>Tipo:</b> {{ template.kind or '-' }}
-</p>
+<div class="page-wrap">
+  <div class="page-head">
+    <div>
+      <h2 style="margin:0;">🔎 Template: {{ template.name }}</h2>
+      <div class="muted" style="margin-top:6px;">
+        {% if template.niche %}<span class="badge">Nicho: {{ template.niche }}</span>{% endif %}
+        {% if template.kind %}<span class="badge">Tipo: {{ template.kind }}</span>{% endif %}
+        {% if template.description %}<span class="badge">{{ template.description }}</span>{% endif %}
+      </div>
+      <div class="muted" style="margin-top:6px;">Atualizado: <b>{{ template.updated_at }}</b></div>
+    </div>
 
-<hr>
+    <div class="btn-row">
+      <a href="{{ back_url }}" class="btn btn-secondary">← Voltar</a>
+      <button class="btn btn-outline-primary" type="button" onclick="copyJson()">📋 Copiar JSON</button>
+    </div>
+  </div>
 
-<pre class="bg-light p-3 border rounded">
-{{ rules_text }}
-</pre>
+  {% if flash %}
+    <div class="alert alert-{{ flash.kind }}" style="margin-top:12px;">
+      {{ flash.message }}
+    </div>
+  {% endif %}
 
-<hr>
+  <div class="grid" style="margin-top:12px;">
+    <div class="card">
+      <div class="card-body">
+        <h4 style="margin-top:0;">✅ Aplicar em um agente</h4>
+        <div class="muted">Isso vai substituir o <code>rules_json</code> do agente selecionado.</div>
 
-<h4>Aplicar em agente</h4>
+        <form method="post" action="{{ apply_action }}" style="margin-top:12px;">
+          <div class="form-group">
+            <div class="label">Agente</div>
+            <select name="agent_id" class="form-control" required>
+              <option value="">-- selecione --</option>
+              {% for a in agents %}
+                <option value="{{ a.id }}">{{ a.name }} ({{ a.instance }})</option>
+              {% endfor %}
+            </select>
+          </div>
 
-<form method="post" action="{{ apply_action }}">
-  <select name="agent_id" class="form-control" required>
-    <option value="">Selecione...</option>
-    {% for a in agents %}
-      <option value="{{ a.id }}">{{ a.name }} ({{ a.instance }})</option>
-    {% endfor %}
-  </select>
+          <div style="margin-top:12px;">
+            <button type="submit" class="btn btn-primary">Aplicar Template</button>
+          </div>
+        </form>
 
-  <br>
+        <hr>
 
-  <button type="submit" class="btn btn-primary">
-    Aplicar Template
-  </button>
-</form>
+        <div class="muted">
+          Se quiser, depois eu adiciono: <b>aplicar e já abrir o editor</b>, e <b>duplicar template</b>.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+          <h4 style="margin:0;">📄 Regras (JSON)</h4>
+          <div class="muted">Scroll interno • Altura controlada</div>
+        </div>
+
+        <pre id="rulesPre" class="code" style="margin-top:10px;">{{ rules_text }}</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function copyJson() {
+    const text = document.getElementById('rulesPre')?.innerText || '';
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      alert("JSON copiado!");
+    }).catch(() => {
+      alert("Não foi possível copiar automaticamente. Selecione e copie manualmente.");
+    });
+  }
+</script>
 
 {% endblock %}
