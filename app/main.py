@@ -353,6 +353,33 @@ async def webhook(req: Request):
     ctx = {"client_id": client_id, "agent_id": agent_id, "instance": instance}
     reply = reply_for(number, text, state, ctx=ctx)
 
+
+    from .ai_guard import ai_should_run
+    from .ai_service import ai_assist_reply
+
+
+    # se pausado
+    if reply is None:
+        return {"ok": True, "paused": True}
+
+    allowed, reason = ai_should_run(
+        user_text=text,
+        base_reply=reply,
+        state=state,
+        paused=False,
+    )
+
+    if allowed:
+        reply = await ai_assist_reply(
+            user_text=text,
+            base_reply=reply,
+            agent_rules=getattr(agent, "rules_json", None),
+        )
+    else:
+        # opcional: log para debug
+        logger.info("AI_GUARD_SKIP: reason=%s instance=%s from=%s", reason, instance, number)
+    
+
     normalized = (text or "").strip().lower()
 
     if "atendente" in normalized:
