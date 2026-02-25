@@ -380,18 +380,6 @@ async def webhook(req: Request):
         logger.info("AI_GUARD_SKIP: reason=%s instance=%s from=%s", reason, instance, number)
     
 
-    normalized = (text or "").strip().lower()
-
-    if "atendente" in normalized:
-        # não passa pela IA
-        pass
-    else:
-        reply = await ai_assist_reply(
-            user_text=text,
-            base_reply=reply,
-            agent_rules=getattr(agent, "rules_json", None),
-    )
-
     # AI assist
 
     agent_rules = getattr(agent, "rules_json", None)  # se você tiver carregado no objeto agent do DB
