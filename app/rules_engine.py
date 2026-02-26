@@ -22,6 +22,7 @@ class AgentRules:
 _CACHE: dict[str, tuple[float, dict]] = {}
 _CACHE_TTL_SECONDS = 0  # 0 = sempre reflete mudanças (sem TTL)
 
+
 def _now() -> float:
     return time.time()
 
@@ -32,7 +33,6 @@ def load_rules_for_agent(agent_id: str) -> dict:
 
     hit = _CACHE.get(agent_id)
     if hit:
-        # TTL opcional (aqui 0, mas mantemos estrutura)
         ts, rules = hit
         if _CACHE_TTL_SECONDS <= 0 or (_now() - ts) <= _CACHE_TTL_SECONDS:
             return rules
@@ -61,6 +61,16 @@ def get_text(d: dict, path: str, default: str = "") -> str:
     return cur if isinstance(cur, str) else default
 
 
+def _safe_format(template: str, **kwargs) -> str:
+    """
+    Formata placeholders sem quebrar se o template tiver chaves extras.
+    """
+    try:
+        return template.format(**kwargs)
+    except Exception:
+        return template
+
+
 def in_business_hours(rules: dict) -> bool:
     """
     Simples: se não existir hours, considera aberto.
@@ -87,6 +97,18 @@ def in_business_hours(rules: dict) -> bool:
 
 
 def menu_reply(rules: dict) -> str:
+    """
+    Mantém o menu atual (baseado em menu.options).
+    Se existir ui.menu.fallback_text (novo), usa como texto do menu.
+    """
+    ui = rules.get("ui") or {}
+    if isinstance(ui, dict):
+        ui_menu = ui.get("menu") or {}
+        if isinstance(ui_menu, dict):
+            fb = ui_menu.get("fallback_text")
+            if isinstance(fb, str) and fb.strip():
+                return fb.strip()
+
     menu = rules.get("menu") or {}
     title = menu.get("title") or "Menu"
     opts = menu.get("options") or []
@@ -101,13 +123,27 @@ def menu_reply(rules: dict) -> str:
 
 
 def match_menu_option(rules: dict, text: str) -> Optional[dict]:
+    """
+    Mantém compatibilidade:
+    - primeiro tenta menu.options (antigo)
+    - depois tenta menu.map (novo para rowId/buttonId)
+    """
     menu = rules.get("menu") or {}
+    t = (text or "").strip()
+
+    # 1) antigo: menu.options com key "1/2/3"
     opts = menu.get("options") or []
-    t = (text or "").strip().lower()
+    tl = t.lower()
     for o in opts:
         k = str(o.get("key") or "").strip().lower()
-        if k and t == k:
+        if k and tl == k:
             return o
+
+    # 2) novo opcional: menu.map (ex.: "menu:orcamento" -> reply)
+    mp = menu.get("map")
+    if isinstance(mp, dict) and t in mp:
+        return {"key": t, "reply": mp.get(t)}
+
     return None
 
 
@@ -118,10 +154,14 @@ def apply_rules(number: str, text: str, state: dict, rules: dict) -> Optional[st
     - keyword handoff
     - menu + opções
     - captura lead (se capture_lead habilitado)
+
+    Alterações:
+    - handoff_ok suporta placeholders: {nome}, {telefone}, {assunto}
+    - menu.map opcional (compatível com selectedRowId/selectedButtonId)
     """
     t = (text or "").strip()
 
-    # Handoff keyword
+    # Handoff keyword (mesmo comportamento)
     handoff = rules.get("handoff") or {}
     handoff_kw = (handoff.get("keyword") or "atendente").strip().lower()
     if t.lower() == handoff_kw:
@@ -132,7 +172,7 @@ def apply_rules(number: str, text: str, state: dict, rules: dict) -> Optional[st
             "Perfeito! Para encaminhar para um atendente, envie:\n*Nome* - *Telefone* - *Assunto*",
         )
 
-    # Horário comercial
+    # Horário comercial (mesmo comportamento)
     if not in_business_hours(rules):
         if (state.get("step") or "") not in ("handoff_collect", "lead_captured"):
             return get_text(
@@ -141,7 +181,7 @@ def apply_rules(number: str, text: str, state: dict, rules: dict) -> Optional[st
                 "Estamos fora do horário agora 🙂. Se quiser atendimento, digite *atendente*.",
             )
 
-    # Comandos
+    # Comandos (mesmo comportamento)
     if t.lower() in ("menu", "voltar"):
         state["step"] = "menu"
         return menu_reply(rules)
@@ -150,15 +190,25 @@ def apply_rules(number: str, text: str, state: dict, rules: dict) -> Optional[st
     if state.get("step") == "handoff_collect":
         parts = [p.strip() for p in t.split("-")]
         if len(parts) >= 3:
-            nome = parts[0]
-            telefone = parts[1]
+            nome = (parts[0] or "").strip()
+            telefone = (parts[1] or "").strip()
             assunto = "-".join(parts[2:]).strip()
+
             state["lead"] = {"nome": nome, "telefone": telefone, "assunto": assunto}
             state["step"] = "lead_captured"
-            return get_text(
+
+            # ✅ NOVO: handoff_ok com nome (placeholders)
+            tpl = get_text(
                 rules,
                 "messages.handoff_ok",
-                "Obrigado! ✅ Recebemos suas informações e um atendente vai falar com você em breve.",
+                "Obrigado, {nome}! ✅ Recebemos suas informações e um atendente vai falar com você em breve.",
+            )
+
+            return _safe_format(
+                tpl,
+                nome=nome or "🙂",
+                telefone=telefone or "",
+                assunto=assunto or "",
             )
 
         return get_text(
@@ -167,11 +217,29 @@ def apply_rules(number: str, text: str, state: dict, rules: dict) -> Optional[st
             "Não consegui entender. Envie no formato:\n*Nome* - *Telefone* - *Assunto*",
         )
 
-    # Menu option
+    # Menu option (antigo + novo map)
     opt = match_menu_option(rules, t)
     if opt:
         state["step"] = f"menu:{opt.get('key')}"
+
         reply = opt.get("reply") or opt.get("ask") or "Ok."
+
+        # ✅ NOVO: suporta macros simples no map
+        # - "__SHOW_MENU__" mostra o menu
+        # - "__HANDOFF__" inicia coleta do lead (igual a keyword atendente)
+        if isinstance(reply, str):
+            if reply == "__SHOW_MENU__":
+                state["step"] = "menu"
+                return menu_reply(rules)
+
+            if reply == "__HANDOFF__":
+                state["step"] = "handoff_collect"
+                return get_text(
+                    rules,
+                    "messages.handoff_prompt",
+                    "Perfeito! Para encaminhar para um atendente, envie:\n*Nome* - *Telefone* - *Assunto*",
+                )
+
         return str(reply)
 
     # Default / welcome
