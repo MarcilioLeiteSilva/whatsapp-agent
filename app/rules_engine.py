@@ -1,13 +1,20 @@
 # app/rules_engine.py
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
+from datetime import datetime
 
 from sqlalchemy import select
 from .db import SessionLocal
 from .models import Agent
+
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None  # type: ignore
 
 
 @dataclass
@@ -71,27 +78,58 @@ def _safe_format(template: str, **kwargs) -> str:
         return template
 
 
+def _now_minutes_in_tz(tzname: str) -> int:
+    """
+    Retorna minutos do dia (0..1439) no timezone informado.
+    Fallback: UTC.
+    """
+    if ZoneInfo:
+        try:
+            now = datetime.now(ZoneInfo(tzname))
+            return now.hour * 60 + now.minute
+        except Exception:
+            pass
+
+    # fallback UTC
+    now = datetime.utcnow()
+    return now.hour * 60 + now.minute
+
+
 def in_business_hours(rules: dict) -> bool:
     """
-    Simples: se não existir hours, considera aberto.
-    (Depois evoluímos para timezone real e janelas por dia)
+    Horário comercial com timezone correto.
+
+    Compatível com o JSON atual:
+      "hours": {"mode":"business","open":"08:00","close":"18:00"}
+
+    Novo (opcional):
+      "hours": {"timezone":"America/Sao_Paulo"}
+
+    Se não existir hours ou mode != business => considera aberto.
     """
     hours = rules.get("hours") or {}
     mode = (hours.get("mode") or "").lower()
     if mode != "business":
         return True
 
-    open_h = hours.get("open") or "08:00"
-    close_h = hours.get("close") or "18:00"
+    open_h = str(hours.get("open") or "08:00").strip()
+    close_h = str(hours.get("close") or "18:00").strip()
 
-    # usa hora do sistema do container (depois: tz)
-    lt = time.localtime()
-    now_min = lt.tm_hour * 60 + lt.tm_min
+    # timezone: prioridade = rules.hours.timezone > env APP_TIMEZONE > America/Sao_Paulo
+    tzname = str(hours.get("timezone") or os.getenv("APP_TIMEZONE", "America/Sao_Paulo")).strip() or "America/Sao_Paulo"
 
-    oh, om = open_h.split(":")
-    ch, cm = close_h.split(":")
-    open_min = int(oh) * 60 + int(om)
-    close_min = int(ch) * 60 + int(cm)
+    # agora em minutos no fuso certo
+    now_min = _now_minutes_in_tz(tzname)
+
+    # parse de "HH:MM"
+    try:
+        oh, om = open_h.split(":")
+        ch, cm = close_h.split(":")
+        open_min = int(oh) * 60 + int(om)
+        close_min = int(ch) * 60 + int(cm)
+    except Exception:
+        # se configuraram errado, não derruba atendimento
+        return True
 
     return open_min <= now_min <= close_min
 
@@ -172,7 +210,7 @@ def apply_rules(number: str, text: str, state: dict, rules: dict) -> Optional[st
             "Perfeito! Para encaminhar para um atendente, envie:\n*Nome* - *Telefone* - *Assunto*",
         )
 
-    # Horário comercial (mesmo comportamento)
+    # Horário comercial (timezone correto)
     if not in_business_hours(rules):
         if (state.get("step") or "") not in ("handoff_collect", "lead_captured"):
             return get_text(
@@ -197,7 +235,6 @@ def apply_rules(number: str, text: str, state: dict, rules: dict) -> Optional[st
             state["lead"] = {"nome": nome, "telefone": telefone, "assunto": assunto}
             state["step"] = "lead_captured"
 
-            # ✅ NOVO: handoff_ok com nome (placeholders)
             tpl = get_text(
                 rules,
                 "messages.handoff_ok",
@@ -224,9 +261,7 @@ def apply_rules(number: str, text: str, state: dict, rules: dict) -> Optional[st
 
         reply = opt.get("reply") or opt.get("ask") or "Ok."
 
-        # ✅ NOVO: suporta macros simples no map
-        # - "__SHOW_MENU__" mostra o menu
-        # - "__HANDOFF__" inicia coleta do lead (igual a keyword atendente)
+        # macros simples no map (compatível)
         if isinstance(reply, str):
             if reply == "__SHOW_MENU__":
                 state["step"] = "menu"
