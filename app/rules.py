@@ -60,7 +60,7 @@ def detect_intents(text: str, rules: Optional[dict] = None) -> List[str]:
         if pat.search(t):
             hits.append(name)
 
-    # custom por agente (sem regex obrigatória; aceita texto simples também)
+    # custom por agente
     try:
         if isinstance(rules, dict):
             intents_cfg = rules.get("intents") or {}
@@ -77,7 +77,6 @@ def detect_intents(text: str, rules: Optional[dict] = None) -> List[str]:
                         ps = str(p or "").strip()
                         if not ps:
                             continue
-                        # se o pattern parece regex, a pessoa pode usar; senão funciona como substring também
                         try:
                             if re.search(ps, t, re.I):
                                 hits.append(nm)
@@ -108,4 +107,5 @@ def reply_for(number: str, text: str, state: Dict[str, Any], ctx: Optional[Dict[
     agent_id = (ctx.get("agent_id") or "").strip()
 
     rules = load_rules_for_agent(agent_id) if agent_id else {}
+    # mantém compatibilidade total: apply_rules continua mesma assinatura
     return apply_rules(number, text, state, rules)
