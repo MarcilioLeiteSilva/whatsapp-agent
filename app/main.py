@@ -346,7 +346,7 @@ async def webhook(req: Request):
 
     MSG_PROCESSED.inc()
 
-    # ADMIN: #leads (processa cedo, antes do rules)
+    # ADMIN: #leads (processa cedo, antes do rules) — NÃO bloqueia por pausa
     if (text or "").strip().lower() == "#leads":
         if not ADMIN_NUMBER or number != ADMIN_NUMBER:
             WEBHOOK_IGNORED.labels("admin_unauthorized").inc()
@@ -422,21 +422,33 @@ async def webhook(req: Request):
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True}
 
+    # Estado da conversa (GARANTE dict)
+    state_key = f"{agent_id}:{number}"
+    state = _safe_state(store.get_state(state_key))
+
+    # ✅ NOVO: se estiver pausado (handoff concluído), não responde mais
+    # (Admin #leads já foi tratado acima e não cai aqui)
+    try:
+        if store.is_paused(state_key):
+            WEBHOOK_IGNORED.labels("paused").inc()
+            WEBHOOK_LATENCY.observe(time.time() - start)
+            return {"ok": True, "paused": True}
+    except Exception as e:
+        logger.warning("PAUSE_CHECK_WARN: key=%s err=%s", state_key, e)
+
     # Captura automática: primeiro contato + intenção
+    # (mantém como estava; roda mesmo se depois o rules pausar)
     try:
         ensure_first_contact(client_id=client_id, agent_id=agent_id, instance=instance, from_number=number)
         LEAD_FIRST_CONTACT.inc()
 
-        intents = detect_intents(text)
+        # OBS: se quiser intents custom por agente, passe agent.rules_json aqui:
+        intents = detect_intents(text, getattr(agent, "rules_json", None))
         if intents:
             mark_intent(client_id=client_id, agent_id=agent_id, instance=instance, from_number=number, intents=intents)
             LEAD_INTENT_MARKED.inc()
     except Exception as e:
         logger.error("LEAD_CAPTURE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
-
-    # Estado da conversa (GARANTE dict)
-    state_key = f"{agent_id}:{number}"
-    state = _safe_state(store.get_state(state_key))
 
     # Rules
     ctx = {"client_id": client_id, "agent_id": agent_id, "instance": instance}
@@ -485,7 +497,7 @@ async def webhook(req: Request):
             reply = ai_fb
 
     # Persistência do lead (uma vez)
-    # FIX: state agora é sempre dict e foi salvo; aqui garantimos que não perde.
+    # ✅ NOVO: após salvar com sucesso, PAUSA forever
     try:
         step = (state.get("step") or "").strip()
         lead_obj = state.get("lead") if isinstance(state.get("lead"), dict) else None
@@ -507,19 +519,26 @@ async def webhook(req: Request):
             )
 
             state["lead_saved"] = True
+
+            # ✅ PAUSA: o bot fica inativo depois de confirmar o handoff
+            try:
+                store.pause_forever(state_key)
+                state["bot_paused_forever"] = True  # opcional p/ debug (store já salva)
+            except Exception as pe:
+                logger.warning("PAUSE_FOREVER_WARN: key=%s err=%s", state_key, pe)
+
             try:
                 store.set_state(state_key, state)
             except Exception as se:
                 logger.warning("STATE_SAVE_WARN_AFTER_LEAD: key=%s err=%s", state_key, se)
 
             LEAD_SAVED.inc()
-            logger.info("LEAD_SAVED: client_id=%s agent_id=%s instance=%s from=%s", client_id, agent_id, instance, number)
-        else:
-            # Log útil para diagnosticar por que não salvou
             logger.info(
-                "LEAD_SAVE_SKIP: step=%s has_lead=%s lead_saved=%s",
-                step, bool(lead_obj), already_saved
+                "LEAD_SAVED_AND_PAUSED: client_id=%s agent_id=%s instance=%s from=%s",
+                client_id, agent_id, instance, number
             )
+        else:
+            logger.info("LEAD_SAVE_SKIP: step=%s has_lead=%s lead_saved=%s", step, bool(lead_obj), already_saved)
     except Exception as e:
         logger.error("LEAD_SAVE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
 
