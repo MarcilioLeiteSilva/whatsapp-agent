@@ -1,40 +1,20 @@
-# app/main.py
-from __future__ import annotations
-
 import os
 import time
 import logging
-import asyncio
-from typing import Any, Tuple, Dict, Optional
-
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import Response
+
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
-from .monitoring import monitor_loop
 from .evolution import EvolutionClient
 from .store import MemoryStore
 from .rules import reply_for, detect_intents
-from .ai_service import ai_assist_reply, ai_fallback_reply
-from .ai_guard import ai_should_run
-
-from .admin_web import router as admin_web_router
-from .portal_web import router as portal_router
-from .admin import router as admin_router
-
-# agent_push é opcional (não pode derrubar o app se o módulo não existir)
-try:
-    from .agent_push import router as agent_push_router  # type: ignore
-except Exception:
-    agent_push_router = None
-
 from .lead_logger import (
     ensure_first_contact,
     mark_intent,
     save_handoff_lead,
     get_last_leads,
-    get_agent_by_instance,
 )
 
 from .metrics import (
@@ -50,83 +30,62 @@ from .metrics import (
 )
 
 from .ratelimit import RateLimiter
-
-# (Opcional) DEV auto-create tables
-try:
-    from .db_init import init_db_if_dev
-except Exception:
-    init_db_if_dev = None
-
-# (Opcional) DEV bootstrap endpoint
-try:
-    from .admin_bootstrap import router as admin_bootstrap_router
-except Exception:
-    admin_bootstrap_router = None
+from .admin import router as admin_router
+from .integration import router as integration_router
 
 
-# -----------------------------------------------------------------------------
-# Logging / Config
-# -----------------------------------------------------------------------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("agent")
 
 ADMIN_NUMBER = os.getenv("ADMIN_NUMBER", "").strip()
-ALLOW_SIMULATOR = os.getenv("ALLOW_SIMULATOR", "false").strip().lower() in ("1", "true", "yes", "y")
 
-
-# -----------------------------------------------------------------------------
-# App & singletons
-# -----------------------------------------------------------------------------
 app = FastAPI()
 evo = EvolutionClient()
 store = MemoryStore()
 rl = RateLimiter(max_events=10, window_seconds=12)
 
-# Routers
-if agent_push_router:
-    app.include_router(agent_push_router)
-app.include_router(admin_web_router)
-app.include_router(portal_router)
-app.include_router(admin_router)
-if admin_bootstrap_router:
-    app.include_router(admin_bootstrap_router)
-
-
-@app.on_event("startup")
-async def on_startup() -> None:
-    # DEV-only: cria tabelas automaticamente se existir
-    if init_db_if_dev:
+async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str, instance: str):
+    from .settings import CONSIGO_WEBHOOK_URL
+    if not CONSIGO_WEBHOOK_URL:
+        return
+    
+    payload = {
+        "event": "inventory_result",
+        "closing_id": closing_id,
+        "restantes": data.get("restantes", 0),
+        "avarias": data.get("avarias", 0),
+        "perdas": data.get("perdas", 0),
+        "raw_message": raw_text,
+        "from_number": number,
+        "instance": instance
+    }
+    
+    async with httpx.AsyncClient(timeout=10) as client:
         try:
-            init_db_if_dev()
+            r = await client.post(CONSIGO_WEBHOOK_URL, json=payload)
+            logger.info(f"Webhook sent to Consigo: status={r.status_code}")
         except Exception as e:
-            logger.warning("DB_INIT_WARN: %s", e)
+            logger.error(f"Error sending webhook to Consigo: {e}")
 
-    # dispara o monitor em background
-    try:
-        asyncio.create_task(monitor_loop())
-        logger.info("MONITOR_TASK_SCHEDULED")
-    except Exception as e:
-        logger.warning("MONITOR_TASK_WARN: %s", e)
+app.include_router(admin_router)
+app.include_router(integration_router)
 
 
-# -----------------------------------------------------------------------------
-# Helpers: parsing / normalization
-# -----------------------------------------------------------------------------
 def extract_text(msg: dict) -> str:
     """Extrai texto de diferentes formatos de mensagens WhatsApp."""
     if not isinstance(msg, dict):
         return ""
 
-    # Texto simples
+    # texto simples
     if msg.get("conversation"):
         return msg.get("conversation") or ""
 
-    # Texto longo / reply
+    # texto longo / reply
     etm = msg.get("extendedTextMessage") or {}
     if isinstance(etm, dict) and etm.get("text"):
         return etm.get("text") or ""
 
-    # Respostas de botões
+    # respostas de botões
     brm = msg.get("buttonsResponseMessage") or {}
     if isinstance(brm, dict):
         if brm.get("selectedDisplayText"):
@@ -134,7 +93,7 @@ def extract_text(msg: dict) -> str:
         if brm.get("selectedButtonId"):
             return brm.get("selectedButtonId") or ""
 
-    # Respostas de lista
+    # respostas de lista
     lrm = msg.get("listResponseMessage") or {}
     if isinstance(lrm, dict):
         ssr = lrm.get("singleSelectReply") or {}
@@ -143,7 +102,7 @@ def extract_text(msg: dict) -> str:
         if lrm.get("title"):
             return lrm.get("title") or ""
 
-    # Mídia com legenda
+    # mídia com legenda
     for k in ("imageMessage", "videoMessage", "documentMessage"):
         m = msg.get(k) or {}
         if isinstance(m, dict) and m.get("caption"):
@@ -152,7 +111,7 @@ def extract_text(msg: dict) -> str:
     return ""
 
 
-def extract_payload(payload: dict) -> Tuple[str, str, str, str, bool, bool, str, str]:
+def extract_payload(payload: dict):
     """
     Normaliza payload do webhook da Evolution (e variações) para:
     instance, message_id, from_number, text, from_me, is_group, event, status
@@ -161,7 +120,7 @@ def extract_payload(payload: dict) -> Tuple[str, str, str, str, bool, bool, str,
 
     d = payload.get("data") or payload
 
-    # Algumas variações: data["messages"][0]
+    # algumas variações: data["messages"][0]
     if isinstance(d, dict) and isinstance(d.get("messages"), list) and d["messages"]:
         d0 = d["messages"][0] or {}
         if isinstance(d0, dict):
@@ -196,16 +155,6 @@ def extract_payload(payload: dict) -> Tuple[str, str, str, str, bool, bool, str,
     return instance, message_id, from_number, text, from_me, is_group, event, status
 
 
-def _safe_state(state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Garante que state seja sempre dict mutável."""
-    if isinstance(state, dict):
-        return state
-    return {}
-
-
-# -----------------------------------------------------------------------------
-# Basic endpoints
-# -----------------------------------------------------------------------------
 @app.get("/")
 async def root():
     return {"ok": True}
@@ -223,10 +172,7 @@ async def metrics():
 
 @app.get("/status")
 async def status():
-    """
-    Endpoint de diagnóstico rápido.
-    """
-    # DB check
+    # DB check (usa a mesma infra do app)
     db_ok = True
     db_err = None
     try:
@@ -235,35 +181,12 @@ async def status():
         db_ok = False
         db_err = str(e)
 
-    # Evolution reachability check (tolerante)
+    # Evolution reachability check
     evo_ok = True
     evo_err = None
     try:
-        base = (getattr(evo, "base", "") or "").strip()
-
-        # Se não tem base global, tenta pegar do DB (SaaS mode)
-        if not base or not (base.startswith("http://") or base.startswith("https://")):
-            try:
-                from sqlalchemy import select
-                from .db import SessionLocal
-                from .models import Agent
-
-                with SessionLocal() as db:
-                    a = (
-                        db.execute(select(Agent).where(Agent.evolution_base_url.is_not(None)).limit(1))
-                        .scalar_one_or_none()
-                    )
-
-                if a and (a.evolution_base_url or "").strip():
-                    base = (a.evolution_base_url or "").strip().rstrip("/")
-            except Exception:
-                pass
-
-        if not (base.startswith("http://") or base.startswith("https://")):
-            raise ValueError(f"EVOLUTION_BASE_URL inválida (sem protocolo): {base!r}")
-
         async with httpx.AsyncClient(timeout=5) as c:
-            r = await c.get(base)
+            r = await c.get(evo.base)
             _ = r.status_code
     except Exception as e:
         evo_ok = False
@@ -275,16 +198,11 @@ async def status():
         "db_err": db_err,
         "evolution_ok": evo_ok,
         "evolution_err": evo_err,
-        "allow_simulator": ALLOW_SIMULATOR,
-        "agent_push_loaded": bool(agent_push_router),
     }
 
 
-# -----------------------------------------------------------------------------
-# Webhook (core)
-# -----------------------------------------------------------------------------
 @app.post("/webhook")
-async def webhook(req: Request):
+async def webhook(req: Request, background_tasks: BackgroundTasks):
     start = time.time()
     WEBHOOK_RECEIVED.inc()
 
@@ -295,50 +213,75 @@ async def webhook(req: Request):
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "bad_json"}
 
+    logger.info("WEBHOOK: %s", payload)
+
     instance, message_id, number, text, from_me, is_group, event, status = extract_payload(payload)
 
-    # Multi-tenant routing: instance -> agent
+    from .lead_logger import get_agent_by_instance
+
     agent = get_agent_by_instance(instance)
+
     if not agent:
-        logger.warning("UNKNOWN_INSTANCE: instance=%s", instance)
-        WEBHOOK_IGNORED.labels("unknown_instance").inc()
-        WEBHOOK_LATENCY.observe(time.time() - start)
+        logger.warning("UNKNOWN_INSTANCE: %s", instance)
         return {"ok": True, "ignored": "unknown_instance"}
 
     client_id = agent.client_id
     agent_id = agent.id
 
     logger.info(
-        "CTX: client_id=%s agent_id=%s instance=%s message_id=%s from=%s event=%s status=%s text=%r",
-        client_id, agent_id, instance, message_id, number, event, status, text,
+        "EXTRACTED: instance=%s id=%s number=%s text=%r from_me=%s group=%s event=%s status=%s",
+        instance,
+        message_id,
+        number,
+        text,
+        from_me,
+        is_group,
+        event,
+        status,
     )
 
-    # Filtrar ruído (ACK/status/update)
+    # -------------------------
+    # ✅ Filtrar ACK/status/update (ruído)
+    # -------------------------
+    # ✅ Filtrar ACK/status/update (ruído)
+# Importante: a Evolution pode enviar messages.upsert com status (ex: DELIVERY_ACK)
+# junto com uma mensagem real. Então só ignoramos "status" quando NÃO há texto.
     if "update" in event:
         WEBHOOK_IGNORED.labels("update").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "update"}
 
-    if status in {"ACK", "READ", "DELIVERED", "DELIVERED_TO_DEVICE", "SERVER_ACK", "DELIVERY_ACK"} and not text:
+    if status in {
+        "ACK",
+        "READ",
+        "DELIVERED",
+        "DELIVERED_TO_DEVICE",
+        "SERVER_ACK",
+        "DELIVERY_ACK",
+    } and not text:
         WEBHOOK_IGNORED.labels("ack/status_no_text").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "ack/status_no_text"}
 
+    # ignora mensagens enviadas por nós ou em grupo
     if from_me or is_group:
         WEBHOOK_IGNORED.labels("from_me_or_group").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "from_me/group"}
 
+    # dedup só se tiver id
     if message_id and store.seen(message_id):
         WEBHOOK_IGNORED.labels("dedup").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "dedup"}
 
+    # se não conseguiu extrair número/texto, não segue
     if not number or not text:
         WEBHOOK_IGNORED.labels("missing_number_or_text").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "missing_number_or_text"}
 
+    # Rate limit por número (proteção anti-spam)
     if not rl.allow(number):
         WEBHOOK_IGNORED.labels("rate_limited").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
@@ -346,7 +289,40 @@ async def webhook(req: Request):
 
     MSG_PROCESSED.inc()
 
-    # ADMIN: #leads (processa cedo, antes do rules) — NÃO bloqueia por pausa
+    # ================================
+    # ✅ Captura automática
+    # 1) Primeiro contato
+    # 2) Intenção (lead quente)
+    # ================================
+    try:
+        ensure_first_contact(
+        client_id=client_id,
+        agent_id=agent_id,
+        instance=instance,
+        from_number=number
+    )
+        LEAD_FIRST_CONTACT.inc()
+
+        intents = detect_intents(text)
+        if intents:
+            mark_intent(
+        client_id=client_id,
+        agent_id=agent_id,
+        instance=instance,
+        from_number=number,
+        intents=intents
+)
+            
+            LEAD_INTENT_MARKED.inc()
+    except Exception as e:
+        # Não derruba o atendimento se o banco falhar
+        logger.error("LEAD_CAPTURE_ERROR: %s", e)
+
+    state = store.get_state(number)
+
+    # ========================================
+    # 🔐 Comando ADMIN: listar últimos leads
+    # ========================================
     if (text or "").strip().lower() == "#leads":
         if not ADMIN_NUMBER or number != ADMIN_NUMBER:
             WEBHOOK_IGNORED.labels("admin_unauthorized").inc()
@@ -356,40 +332,19 @@ async def webhook(req: Request):
         try:
             leads = get_last_leads(limit=5)
         except Exception as e:
-            logger.error(
-                "ADMIN_LEADS_ERROR: client_id=%s agent_id=%s instance=%s err=%s",
-                client_id, agent_id, instance, e
-            )
+            logger.error("ADMIN_LEADS_ERROR: %s", e)
             try:
-                await evo.send_text(
-                    number,
-                    "Erro ao consultar leads no banco.",
-                    base_url=agent.evolution_base_url,
-                    instance=agent.instance,
-                    api_key=agent.api_key,
-                )
+                await evo.send_text(instance, number, "Erro ao consultar leads no banco.")
             except Exception as se:
-                logger.error(
-                    "SEND_TEXT_ERROR(admin): client_id=%s agent_id=%s instance=%s err=%s",
-                    client_id, agent_id, instance, se
-                )
+                logger.error("SEND_TEXT_ERROR(admin): %s", se)
             WEBHOOK_LATENCY.observe(time.time() - start)
             return {"ok": True}
 
         if not leads:
             try:
-                await evo.send_text(
-                    number,
-                    "Nenhum lead encontrado.",
-                    base_url=agent.evolution_base_url,
-                    instance=agent.instance,
-                    api_key=agent.api_key,
-                )
+                await evo.send_text(instance, number, "Nenhum lead encontrado.")
             except Exception as se:
-                logger.error(
-                    "SEND_TEXT_ERROR(admin): client_id=%s agent_id=%s instance=%s err=%s",
-                    client_id, agent_id, instance, se
-                )
+                logger.error("SEND_TEXT_ERROR(admin): %s", se)
             WEBHOOK_LATENCY.observe(time.time() - start)
             return {"ok": True}
 
@@ -404,165 +359,85 @@ async def webhook(req: Request):
             )
 
         try:
-            await evo.send_text(
-                number,
-                msg[:3500],
-                base_url=agent.evolution_base_url,
-                instance=agent.instance,
-                api_key=agent.api_key,
-            )
+            await evo.send_text(instance, number, msg[:3500])
             MSG_SENT_OK.inc()
         except Exception as se:
             MSG_SENT_ERR.inc()
-            logger.error(
-                "SEND_TEXT_ERROR(admin): client_id=%s agent_id=%s instance=%s err=%s",
-                client_id, agent_id, instance, se
-            )
+            logger.error("SEND_TEXT_ERROR(admin): %s", se)
 
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True}
 
-    # Estado da conversa (GARANTE dict)
-    state_key = f"{agent_id}:{number}"
-    state = _safe_state(store.get_state(state_key))
+    # ========================================
+    # 🤖 Regras normais do bot
+    # ========================================
+    reply = reply_for(number, text, state)
+    logger.info("RULES_REPLY: number=%s reply=%r step=%s", number, reply, (state or {}).get("step"))
 
-    # ✅ NOVO: se estiver pausado (handoff concluído), não responde mais
-    # (Admin #leads já foi tratado acima e não cai aqui)
-    try:
-        if store.is_paused(state_key):
-            WEBHOOK_IGNORED.labels("paused").inc()
-            WEBHOOK_LATENCY.observe(time.time() - start)
-            return {"ok": True, "paused": True}
-    except Exception as e:
-        logger.warning("PAUSE_CHECK_WARN: key=%s err=%s", state_key, e)
-
-    # Captura automática: primeiro contato + intenção
-    # (mantém como estava; roda mesmo se depois o rules pausar)
-    try:
-        ensure_first_contact(client_id=client_id, agent_id=agent_id, instance=instance, from_number=number)
-        LEAD_FIRST_CONTACT.inc()
-
-        # OBS: se quiser intents custom por agente, passe agent.rules_json aqui:
-        intents = detect_intents(text, getattr(agent, "rules_json", None))
-        if intents:
-            mark_intent(client_id=client_id, agent_id=agent_id, instance=instance, from_number=number, intents=intents)
-            LEAD_INTENT_MARKED.inc()
-    except Exception as e:
-        logger.error("LEAD_CAPTURE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
-
-    # Rules
-    ctx = {"client_id": client_id, "agent_id": agent_id, "instance": instance}
-    reply = reply_for(number, text, state, ctx=ctx)
-
-    # IMPORTANTÍSSIMO: persistir o state mutado pelo rules engine
-    try:
-        store.set_state(state_key, state)
-    except Exception as e:
-        logger.warning("STATE_SAVE_WARN: key=%s err=%s", state_key, e)
-
-    # Pausado/handoff (não envia msg)
     if reply is None:
         WEBHOOK_IGNORED.labels("paused").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "paused": True}
 
-    # ------------------------------
-    # AI (assistive + fallback) - SINGLE PASS
-    # ------------------------------
-    agent_rules = getattr(agent, "rules_json", None)
-
-    allowed, reason = ai_should_run(
-        user_text=text,
-        base_reply=reply,
-        state=state,
-        paused=False,
-    )
-
-    if allowed:
-        reply = await ai_assist_reply(
-            user_text=text,
-            base_reply=reply,
-            agent_rules=agent_rules,
+    # =========================================================
+    # 🔔 Notificar Consigo se o inventário foi concluído
+    # =========================================================
+    if state.get("step") == "inventory_completed" and not state.get("notified_consigo"):
+        background_tasks.add_task(
+            notify_consigo,
+            closing_id=state.get("closing_id"),
+            data=state.get("inventory_data"),
+            raw_text=text,
+            number=number,
+            instance=instance
         )
-    else:
-        logger.info(
-            "AI_GUARD_SKIP: reason=%s instance=%s from=%s step=%s",
-            reason, instance, number, (state or {}).get("step"),
-        )
+        state["notified_consigo"] = True
 
-    # Fallback IA: só se o rules devolveu fallback padrão
-    if reply and "Não entendi" in reply:
-        ai_fb = await ai_fallback_reply(user_text=text, agent_rules=agent_rules)
-        if ai_fb:
-            reply = ai_fb
-
-    # Persistência do lead (uma vez)
-    # ✅ NOVO: após salvar com sucesso, PAUSA forever
+    # ========================================
+    # 💾 Salvar lead no Postgres (uma vez só)
+    # (quando rules.py marcar step lead_captured)
+    # ========================================
     try:
-        step = (state.get("step") or "").strip()
-        lead_obj = state.get("lead") if isinstance(state.get("lead"), dict) else None
-        already_saved = bool(state.get("lead_saved"))
+        if (
+            state.get("step") == "lead_captured"
+            and state.get("lead")
+            and not state.get("lead_saved")
+        ):
+            lead = state["lead"] or {}
+            nome = (lead.get("nome") or "").strip()
+            telefone = (lead.get("telefone") or "").strip()
+            assunto = (lead.get("assunto") or "").strip()
 
-        if step == "lead_captured" and lead_obj and not already_saved:
-            nome = (lead_obj.get("nome") or "").strip()
-            telefone = (lead_obj.get("telefone") or "").strip()
-            assunto = (lead_obj.get("assunto") or "").strip()
-
-            save_handoff_lead(
-                client_id=client_id,
-                agent_id=agent_id,
-                instance=instance,
-                from_number=number,
-                nome=nome,
-                telefone=telefone,
-                assunto=assunto,
-            )
+        save_handoff_lead(
+        client_id=client_id,
+        agent_id=agent_id,
+        instance=instance,
+        from_number=number,
+        nome=nome,
+        telefone=telefone,
+        assunto=assunto
+    )
 
             state["lead_saved"] = True
-
-            # ✅ PAUSA: o bot fica inativo depois de confirmar o handoff
-            try:
-                store.pause_forever(state_key)
-                state["bot_paused_forever"] = True  # opcional p/ debug (store já salva)
-            except Exception as pe:
-                logger.warning("PAUSE_FOREVER_WARN: key=%s err=%s", state_key, pe)
-
-            try:
-                store.set_state(state_key, state)
-            except Exception as se:
-                logger.warning("STATE_SAVE_WARN_AFTER_LEAD: key=%s err=%s", state_key, se)
-
             LEAD_SAVED.inc()
-            logger.info(
-                "LEAD_SAVED_AND_PAUSED: client_id=%s agent_id=%s instance=%s from=%s",
-                client_id, agent_id, instance, number
-            )
-        else:
-            logger.info("LEAD_SAVE_SKIP: step=%s has_lead=%s lead_saved=%s", step, bool(lead_obj), already_saved)
+            logger.info("LEAD_SAVED: instance=%s number=%s", instance, number)
     except Exception as e:
-        logger.error("LEAD_SAVE_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
+        logger.error("LEAD_SAVE_ERROR: %s", e)
 
-    # Log + Envio
-    logger.info(
-        "SEND_TEXT: client_id=%s agent_id=%s instance=%s to=%s chars=%s step=%s",
-        client_id, agent_id, instance, number, len(reply or ""), (state or {}).get("step"),
-    )
+    # ========================================
+    # 📤 Envio de resposta (nunca derrubar webhook)
+    # ========================================
+    logger.info("SEND_TEXT: to=%s chars=%s", number, len(reply or ""))
 
     try:
-        await evo.send_text(
-            number,
-            reply,
-            base_url=agent.evolution_base_url,
-            instance=agent.instance,
-            api_key=agent.api_key,
-        )
+        await evo.send_text(instance, number, reply)
         MSG_SENT_OK.inc()
+        logger.info("SEND_OK: number=%s", number)
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "sent": True}
     except Exception as e:
         MSG_SENT_ERR.inc()
-        logger.error("SEND_TEXT_ERROR: client_id=%s agent_id=%s instance=%s err=%s", client_id, agent_id, instance, e)
+        logger.error("SEND_TEXT_ERROR: %s", e)
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "sent": False}
     
-
