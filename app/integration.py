@@ -39,6 +39,16 @@ async def verify_key(x_integration_key: str = Header(...)):
 
 # --- Endpoints ---
 
+@router.get("/instances")
+async def list_instances(client_id: Optional[str] = None, _ = Depends(verify_key)):
+    """Lista as instâncias cadastradas."""
+    with SessionLocal() as db:
+        q = select(Agent)
+        if client_id:
+            q = q.where(Agent.client_id == client_id)
+        agents = db.execute(q).scalars().all()
+        return agents
+
 @router.post("/instances", response_model=InstanceResponse)
 async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
     """Cria uma nova instância na Evolution e registra no banco local."""
