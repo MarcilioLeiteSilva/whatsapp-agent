@@ -61,42 +61,53 @@ async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
             db.add(client)
             db.commit()
 
-        # 2. Verificar se a instância já existe no DB
-        existing = db.execute(select(Agent).where(Agent.instance == data.instance_name)).scalar_one_or_none()
-        if existing:
-            raise HTTPException(status_code=400, detail="Instance name already exists in database")
-
-        # 3. Criar na Evolution API
+    try:
+        # 2. Garantir que a instância existe na Evolution
         try:
-            res = await evo.create_instance(data.instance_name)
-            # Evolution v2 retorna dados da instância
-            instance_data = res.get("instance", res)
+            status = await evo.get_connection_state(data.instance_name)
+            logger.info(f"Instance {data.instance_name} already exists. Status: {status.get('instance', {}).get('state')}")
+        except Exception:
+            # Se não existir, cria
+            await evo.create_instance(data.instance_name)
+            logger.info(f"Instance {data.instance_name} created successfully.")
+        
+        # 3. Configurar Webhook
+        if AGENT_BASE_URL:
+            webhook_url = f"{AGENT_BASE_URL.rstrip('/')}/webhook"
+            await evo.set_webhook(data.instance_name, webhook_url)
+        
+        # 4. Obter QR Code (pode falhar se já estiver conectado)
+        qr_data = None
+        try:
+            qr_res = await evo.get_qr_code(data.instance_name)
+            if isinstance(qr_res, dict) and qr_res.get("base64"):
+                qr_data = qr_res.get("base64")
+        except Exception as e:
+            logger.warning(f"Could not get QR Code (maybe already connected): {e}")
+
+        # 5. Registrar no Banco Local
+        with SessionLocal() as db:
+            agent = db.execute(select(Agent).where(Agent.name == data.instance_name)).scalar_one_or_none()
+            if not agent:
+                agent = Agent(
+                    name=data.instance_name,
+                    instance=data.instance_name,
+                    client_id=data.client_id,
+                    evolution_base_url=evo.base_url,
+                    status="active"
+                )
+                db.add(agent)
+                db.commit()
             
-            # 4. Registrar Agente no DB
-            new_agent = Agent(
-                id=f"ag_{data.instance_name}",
-                client_id=data.client_id,
-                name=data.instance_name,
-                instance=data.instance_name,
-                status="created"
-            )
-            db.add(new_agent)
-            db.commit()
-
-            # 5. Configurar Webhook automaticamente
-            if AGENT_BASE_URL:
-                webhook_url = f"{AGENT_BASE_URL.rstrip('/')}/webhook"
-                await evo.set_webhook(data.instance_name, webhook_url)
-                logger.info(f"Webhook set for {data.instance_name}: {webhook_url}")
-
             return {
                 "instance": data.instance_name,
-                "status": "created",
-                "qrcode": res.get("qrcode", {}).get("base64") if isinstance(res.get("qrcode"), dict) else None
+                "status": "active",
+                "qrcode": qr_data
             }
-        except Exception as e:
-            logger.error(f"Error creating instance: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+
+    except Exception as e:
+        logger.error(f"Error creating instance: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/instances/{instance}/qr")
 async def get_qr(instance: str, _ = Depends(verify_key)):
