@@ -97,7 +97,7 @@ async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
                     name=data.instance_name,
                     instance=data.instance_name,
                     client_id=data.client_id,
-                    evolution_base_url=evo.base_url,
+                    evolution_base_url=evo.base,
                     status="active"
                 )
                 db.add(agent)
