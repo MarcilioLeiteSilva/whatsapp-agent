@@ -73,8 +73,12 @@ async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
         
         # 3. Configurar Webhook
         if AGENT_BASE_URL:
-            webhook_url = f"{AGENT_BASE_URL.rstrip('/')}/webhook"
-            await evo.set_webhook(data.instance_name, webhook_url)
+            try:
+                webhook_url = f"{AGENT_BASE_URL.rstrip('/')}/webhook"
+                await evo.set_webhook(data.instance_name, webhook_url)
+                logger.info(f"Webhook configured for {data.instance_name}")
+            except Exception as we:
+                logger.warning(f"Failed to set webhook (non-blocking): {we}")
         
         # 4. Obter QR Code (pode falhar se já estiver conectado)
         qr_data = None

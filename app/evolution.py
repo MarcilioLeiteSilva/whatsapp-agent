@@ -41,13 +41,15 @@ class EvolutionClient:
         payload = {
             "enabled": True,
             "url": webhook_url,
-            "webhook_by_events": False,
+            "webhookByEvents": False,
             "events": [
                 "MESSAGES_UPSERT",
                 "MESSAGES_UPDATE",
                 "MESSAGES_DELETE",
                 "SEND_MESSAGE",
-                "CONNECTION_UPDATE"
+                "CONNECTION_UPDATE",
+                "TYPEBOT_START",
+                "TYPEBOT_CHANGE_STATUS"
             ]
         }
         return await self._request("POST", path, json=payload)
