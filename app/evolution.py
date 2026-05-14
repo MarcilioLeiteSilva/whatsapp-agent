@@ -31,9 +31,9 @@ class EvolutionClient:
         path = "/instance/create"
         payload = {
             "instanceName": instance_name,
-            "qrcode": True
+            "qrcode": True,
+            "integration": "WHATSAPP-BAILEYS"
         }
-        # Nota: Algumas versões da Evolution v2 exigem que não envie o campo 'token' se quiser que ele gere um automático.
         return await self._request("POST", path, json=payload)
 
     async def set_webhook(self, instance: str, webhook_url: str):
