@@ -94,6 +94,7 @@ async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
             agent = db.execute(select(Agent).where(Agent.name == data.instance_name)).scalar_one_or_none()
             if not agent:
                 agent = Agent(
+                    id=f"ag_{data.instance_name}",
                     name=data.instance_name,
                     instance=data.instance_name,
                     client_id=data.client_id,
