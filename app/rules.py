@@ -43,13 +43,16 @@ def in_business_hours(now: datetime) -> bool:
 # 📦 HANDLERS DE ETAPA (Workflow Engine)
 # =========================================================
 
-async def handle_inventory_pending(text: str, state: dict) -> str:
+async def handle_inventory_pending(text: str, state: dict, number: str) -> str:
     """Etapa: Aguardando o usuário aceitar iniciar o acerto."""
     if parse_confirmation(text):
         items = state.get("inventory_items", [])
         if not items:
             state.pop("step", None)
             return "Certo! No momento não identifiquei itens pendentes para acerto. Caso precise de algo, digite *atendente*."
+        
+        # Garante que o robô ACORDE (remove pausa)
+        store.set_paused(number, 0)
         
         msg = "Excelente! 🚀 Aqui estão os itens e as quantidades que constam para o seu PDV:\n\n"
         for i in items:
@@ -60,7 +63,10 @@ async def handle_inventory_pending(text: str, state: dict) -> str:
         return msg
     
     if parse_negative(text):
+        # Limpa o estado e coloca o robô para dormir (pausa de 1 ano)
+        # Ele só acordará quando a Consigo disparar um novo /inventory/start
         state.clear()
+        store.set_paused(number, 31536000) # 1 ano em segundos
         return "Entendido! Sem problemas. Quando puder fazer a conferência, é só me avisar. Até logo! 👋"
 
     return "Para começarmos o acerto, por favor confirme:\n\nDigite *1* para Sim ou *2* para Não."
@@ -115,8 +121,7 @@ async def handle_inventory_summary(text: str, state: dict) -> str:
     """Etapa: Confirmando o resumo da extração."""
     if parse_confirmation(text):
         state["step"] = "inventory_completed"
-        # Não damos clear aqui ainda para que o main.py possa ler o 'inventory_completed' e disparar o webhook
-        return "Recebido! ✅ Acerto encerrado com sucesso. Muito obrigado pela colaboração! 👋"
+        return "Este é um acerto parcial. Na data do fechamento faremos a conferência e o reabastecimento. Recebido! ✅ Acerto encerrado com sucesso. Muito obrigado pela colaboração! 👋"
     
     if parse_negative(text):
         state["step"] = "inventory_collecting"

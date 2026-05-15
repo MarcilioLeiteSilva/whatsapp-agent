@@ -397,8 +397,11 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
             instance=instance
         )
         state["notified_consigo"] = True
-        # Limpa o estado para que a próxima mensagem comece do zero (Atendimento encerrado)
+        
+        # Limpa o estado e coloca o robô para dormir (pausa de 1 ano)
+        # Ele só acordará quando a Consigo disparar um novo /inventory/start
         state.clear()
+        store.set_paused(number, 31536000) # 1 ano em segundos
 
     # ========================================
     # 💾 Salvar lead no Postgres (uma vez só)
