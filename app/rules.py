@@ -51,17 +51,16 @@ async def handle_inventory_pending(text: str, state: dict) -> str:
             state.pop("step", None)
             return "Certo! No momento não identifiquei itens pendentes para acerto. Caso precise de algo, digite *atendente*."
         
-        msg = "Excelente! 🚀 Aqui estão os itens que constam para o seu PDV:\n\n"
+        msg = "Excelente! 🚀 Aqui estão os itens e as quantidades que constam para o seu PDV:\n\n"
         for i in items:
-            msg += f"📦 *{i['product_name']}*\n"
+            msg += f"📦 *{i['product_name']}*: {i['expected_quantity']} unidades\n"
         
-        msg += "\n*O que você ainda tem em mãos destes produtos?*\n(Pode enviar tudo de uma vez, ex: 'Tenho 5 de um e 2 do outro')"
+        msg += "\n*Confirma estas quantidades ou houve alguma alteração?*\n(Pode enviar tudo de uma vez, ex: 'Tenho 5 de um e 2 do outro')"
         state["step"] = "inventory_collecting"
         return msg
     
     if parse_negative(text):
-        state.pop("step", None)
-        state.pop("inventory_items", None)
+        state.clear()
         return "Entendido! Sem problemas. Quando puder fazer a conferência, é só me avisar. Até logo! 👋"
 
     return "Para começarmos o acerto, por favor confirme:\n\nDigite *1* para Sim ou *2* para Não."
@@ -70,7 +69,19 @@ async def handle_inventory_collecting(text: str, state: dict) -> str:
     """Etapa: Extraindo as quantidades enviadas pelo usuário."""
     items_to_check = state.get("inventory_items", [])
     
-    # Aqui usamos a IA apenas como FERRAMENTA de extração (NLP)
+    # Se o usuário apenas disser que "Está tudo certo" ou confirmar os dados da lista
+    if parse_confirmation(text):
+        extracted_items = [{"lot_id": i["lot_id"], "remaining": i["expected_quantity"], "product_name": i["product_name"]} for i in items_to_check]
+        state["step"] = "inventory_summary"
+        state["inventory_data"] = {"items": extracted_items}
+        
+        summary = "Perfeito! Então confirmo os dados originais:\n\n"
+        for item in extracted_items:
+            summary += f"✅ *{item.get('product_name')}*: {item.get('remaining')} unidades\n"
+        summary += "\nEstá correto? Digite *1* para Confirmar ou *2* para Corrigir."
+        return summary
+
+    # Processamento via IA para extração de mudanças
     prompt = (
         f"O usuário enviou uma resposta sobre o estoque: \"{text}\"\n\n"
         f"Temos os seguintes itens pendentes:\n"
@@ -89,8 +100,7 @@ async def handle_inventory_collecting(text: str, state: dict) -> str:
             state["step"] = "inventory_summary"
             state["inventory_data"] = {"items": extracted_items}
             
-            # Gera um resumo para o usuário confirmar
-            summary = "Perfeito! Veja se entendi corretamente:\n\n"
+            summary = "Entendido! Veja se as alterações estão corretas:\n\n"
             for item in extracted_items:
                 summary += f"✅ *{item.get('product_name')}*: {item.get('remaining')} unidades\n"
             
@@ -105,7 +115,8 @@ async def handle_inventory_summary(text: str, state: dict) -> str:
     """Etapa: Confirmando o resumo da extração."""
     if parse_confirmation(text):
         state["step"] = "inventory_completed"
-        return "Recebido! ✅ Já registrei as quantidades informadas no sistema. Muito obrigado pela colaboração!"
+        # Não damos clear aqui ainda para que o main.py possa ler o 'inventory_completed' e disparar o webhook
+        return "Recebido! ✅ Acerto encerrado com sucesso. Muito obrigado pela colaboração! 👋"
     
     if parse_negative(text):
         state["step"] = "inventory_collecting"

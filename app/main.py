@@ -397,6 +397,8 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
             instance=instance
         )
         state["notified_consigo"] = True
+        # Limpa o estado para que a próxima mensagem comece do zero (Atendimento encerrado)
+        state.clear()
 
     # ========================================
     # 💾 Salvar lead no Postgres (uma vez só)
