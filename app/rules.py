@@ -94,19 +94,27 @@ async def reply_for(number: str, text: str, state: dict, agent: any = None) -> s
     if state.get("step") in ("inventory_pending", "inventory_collecting"):
         items_to_check = state.get("inventory_items", [])
         
-        # Se o usuário está apenas confirmando o início ("Sim", "Vamos", "Ok")
-        affirmative = ("sim", "vamos", "ok", "pode", "estou pronto", "bora", "claro", "beleza", "tá", "ta", "com certeza")
-        if state.get("step") == "inventory_pending" and any(word in t for word in affirmative):
-            if not items_to_check:
-                return "Certo! No momento não identifiquei itens pendentes para acerto. Caso tenha algo aí, pode me falar o nome e a quantidade."
+        # Se o usuário está apenas confirmando o início ("Sim", "1", "Ok")
+        affirmative = ("sim", "vamos", "ok", "pode", "estou pronto", "bora", "claro", "beleza", "tá", "ta", "com certeza", "1")
+        negative = ("não", "nao", "agora não", "depois", "2", "parar", "cancelar")
+        
+        if state.get("step") == "inventory_pending":
+            if t in negative:
+                state.pop("step", None)
+                state.pop("inventory_items", None)
+                return "Entendido! Sem problemas. Quando puder fazer a conferência, é só me avisar. Até logo! 👋"
             
-            msg = "Excelente! 🚀 Aqui estão os itens que constam para o seu PDV:\n\n"
-            for i in items_to_check:
-                msg += f"📦 *{i['product_name']}*\n"
-            
-            msg += "\n*O que você ainda tem em mãos destes produtos?*\n(Pode enviar tudo de uma vez, ex: 'Tenho 5 de um e 2 do outro')"
-            state["step"] = "inventory_collecting"
-            return msg
+            if any(word in t for word in affirmative) or t == "1":
+                if not items_to_check:
+                    return "Certo! No momento não identifiquei itens pendentes para acerto. Caso tenha algo aí, pode me falar o nome e a quantidade."
+                
+                msg = "Excelente! 🚀 Aqui estão os itens que constam para o seu PDV:\n\n"
+                for i in items_to_check:
+                    msg += f"📦 *{i['product_name']}*\n"
+                
+                msg += "\n*O que você ainda tem em mãos destes produtos?*\n(Pode enviar tudo de uma vez, ex: 'Tenho 5 de um e 2 do outro')"
+                state["step"] = "inventory_collecting"
+                return msg
 
         # Processamento do Inventário (IA ou Manual)
         if ai_service.AI_ENABLED:
