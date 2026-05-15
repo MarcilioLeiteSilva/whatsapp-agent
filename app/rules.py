@@ -105,7 +105,7 @@ async def reply_for(number: str, text: str, state: dict, agent: any = None) -> s
                 "Se não encontrar algum, ignore-o no JSON."
             )
             
-            ai_res = await ai_service.ai_fallback_reply(user_text=prompt, agent_rules=agent_rules)
+            ai_res = await ai_service.ai_extract_json(prompt=prompt)
             try:
                 # Limpa possível Markdown da IA
                 clean_json = re.sub(r'```json|```', '', ai_res or "[]").strip()
@@ -190,11 +190,11 @@ async def reply_for(number: str, text: str, state: dict, agent: any = None) -> s
     # =========================================================
     if not in_business_hours(now):
         # Se IA habilitada, deixa ela responder de forma educada
-        if ai_service.AI_ENABLED:
+        if not state.get("step") and ai_service.AI_ENABLED:
             ai_reply = await ai_service.ai_fallback_reply(user_text=text, agent_rules=agent_rules)
             if ai_reply: return ai_reply
 
-        if t in ("menu", "oi", "olá", "ola", "inicio", "início", "start"):
+        if not state.get("step") and t in ("menu", "oi", "olá", "ola", "inicio", "início", "start"):
             return (
                 "Oi! 😊 No momento estamos *fora do horário* (seg-sex, 9h às 18h).\n\n"
                 "Se quiser falar com um atendente, digite *atendente*."
@@ -216,7 +216,7 @@ async def reply_for(number: str, text: str, state: dict, agent: any = None) -> s
     # =========================================================
     # 📋 Menu principal (dentro do horário)
     # =========================================================
-    if t in ("menu", "oi", "olá", "ola", "inicio", "início", "start"):
+    if not state.get("step") and t in ("menu", "oi", "olá", "ola", "inicio", "início", "start"):
         state["step"] = "menu"
         # Se IA habilitada, deixa ela dar as boas vindas
         if ai_service.AI_ENABLED:

@@ -259,3 +259,20 @@ async def ai_fallback_reply(*, user_text: str, agent_rules: Optional[dict] = Non
 
     out = _strip_meta_prefix(out)
     return out if out else None
+
+async def ai_extract_json(*, prompt: str) -> Optional[str]:
+    """
+    Extrai JSON estruturado sem interferência de personalidade de assistente.
+    """
+    if not AI_ENABLED:
+        return None
+
+    sys = "Você é um extrator de dados JSON. Retorne APENAS o JSON puro, sem explicações ou markdown."
+    
+    messages = [
+        {"role": "system", "content": sys},
+        {"role": "user", "content": prompt},
+    ]
+    
+    out = await _ai_text(messages, sys + "\n" + prompt)
+    return out.strip() if out else None
