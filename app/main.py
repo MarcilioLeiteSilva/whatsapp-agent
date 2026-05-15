@@ -286,6 +286,13 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "ignored": "rate_limited"}
 
+    # ---------------------------------------------------------
+    # 💤 Check de Pausa (O robô dorme após o acerto)
+    # ---------------------------------------------------------
+    if store.is_paused(number):
+        logger.info("BOT_PAUSED: number=%s", number)
+        return {"ok": True, "paused": True}
+
     MSG_PROCESSED.inc()
 
     # ================================
