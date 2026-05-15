@@ -287,11 +287,12 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
         return {"ok": True, "ignored": "rate_limited"}
 
     # ---------------------------------------------------------
-    # 💤 Check de Pausa (O robô dorme após o acerto)
+    # 🔒 PORTARIA: Somente processa se houver sessão ATIVA
     # ---------------------------------------------------------
-    if store.is_paused(number):
-        logger.info("BOT_PAUSED: number=%s", number)
-        return {"ok": True, "paused": True}
+    status = state.get("status")
+    if status == "closed":
+        logger.info("SESSION_CLOSED: ignoring message from number=%s", number)
+        return {"ok": True, "session": "closed"}
 
     MSG_PROCESSED.inc()
 
@@ -394,7 +395,7 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
     # =========================================================
     # 🔔 Notificar Consigo se o inventário foi concluído
     # =========================================================
-    if state.get("step") == "inventory_completed" and not state.get("notified_consigo"):
+    if state.get("step") == "finished" and not state.get("notified_consigo"):
         background_tasks.add_task(
             notify_consigo,
             closing_id=state.get("closing_id"),
@@ -404,11 +405,9 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
             instance=instance
         )
         state["notified_consigo"] = True
-        
-        # Limpa o estado e coloca o robô para dormir (pausa de 1 ano)
-        # Ele só acordará quando a Consigo disparar um novo /inventory/start
-        state.clear()
-        store.set_paused(number, 31536000) # 1 ano em segundos
+        # O estado agora permanece como status='closed' e step='finished' 
+        # A portaria no início do webhook cuidará de ignorar as próximas mensagens.
+        store.save_state(number, state)
 
     # ========================================
     # 💾 Salvar lead no Postgres (uma vez só)

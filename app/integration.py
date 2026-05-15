@@ -166,17 +166,16 @@ async def start_inventory(data: InventoryStart, _ = Depends(verify_key)):
     store = MemoryStore()
     
     try:
-        # 1. Configurar estado da conversa para o número
+        # 1. Preparar o estado (Sessão LIMPA e ATIVA)
         state = store.get_state(data.pdv_phone)
+        state.clear() # Garante que não haja fantasmas da sessão anterior
+        state["status"] = "active"
         state["step"] = "inventory_pending"
         state["closing_id"] = data.closing_id
         state["inventory_items"] = [item.dict() for item in (data.items or [])]
         
         # Salva no Banco de Dados
         store.save_state(data.pdv_phone, state)
-        
-        # Garante que o robô ACORDE (remove pausa)
-        store.set_paused(data.pdv_phone, 0)
         
         # 2. Enviar mensagem inicial via Evolution
         await evo.send_text(data.instance_name, data.pdv_phone, data.message)

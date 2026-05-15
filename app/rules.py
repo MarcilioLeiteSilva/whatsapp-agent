@@ -122,7 +122,8 @@ async def handle_inventory_collecting(text: str, state: dict) -> str:
 async def handle_inventory_summary(text: str, state: dict) -> str:
     """Etapa: Confirmando o resumo da extração."""
     if parse_confirmation(text):
-        state["step"] = "inventory_completed"
+        state["status"] = "closed"
+        state["step"] = "finished"
         return "Este é um acerto parcial. Na data do fechamento faremos a conferência e o reabastecimento. Recebido! ✅ Acerto encerrado com sucesso. Muito obrigado pela colaboração! 👋"
     
     if parse_negative(text):
