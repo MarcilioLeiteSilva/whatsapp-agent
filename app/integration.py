@@ -172,6 +172,9 @@ async def start_inventory(data: InventoryStart, _ = Depends(verify_key)):
         state["closing_id"] = data.closing_id
         state["inventory_items"] = [item.dict() for item in (data.items or [])]
         
+        # Salva no Banco de Dados
+        store.save_state(data.pdv_phone, state)
+        
         # 2. Enviar mensagem inicial via Evolution
         await evo.send_text(data.instance_name, data.pdv_phone, data.message)
         

@@ -1,4 +1,12 @@
 import time
+import json
+import logging
+from sqlalchemy.orm import Session
+from .db import SessionLocal
+from .models import ConversationState
+from sqlalchemy import select
+
+logger = logging.getLogger("agent")
 
 class MemoryStore:
     _instance = None
@@ -7,8 +15,13 @@ class MemoryStore:
         if cls._instance is None:
             cls._instance = super(MemoryStore, cls).__new__(cls)
             cls._instance.seen_ids = set()
-            cls._instance.user_state = {}
         return cls._instance
+
+    def _normalize_number(self, number: str) -> str:
+        digits = "".join(c for c in (number or "") if c.isdigit())
+        if len(digits) >= 8:
+            return digits[-8:]
+        return digits
 
     def seen(self, message_id: str):
         if not message_id:
@@ -18,22 +31,29 @@ class MemoryStore:
         self.seen_ids.add(message_id)
         return False
 
-    def _normalize_number(self, number: str) -> str:
-        # Remove tudo que não é dígito
-        digits = "".join(c for c in (number or "") if c.isdigit())
-        # Para o Brasil (55), o número pode vir com ou sem o 9 extra.
-        # Pegar os últimos 10 dígitos (DDD + 8 números) costuma ser o mais estável para bater.
-        if len(digits) >= 10:
-            return digits[-10:]
-        return digits
-
     def get_state(self, number: str):
         key = self._normalize_number(number)
-        return self.user_state.setdefault(key, {})
+        with SessionLocal() as db:
+            row = db.execute(select(ConversationState).where(ConversationState.id == key)).scalar_one_or_none()
+            if row:
+                return row.state_json or {}
+            return {}
+
+    def save_state(self, number: str, state: dict):
+        key = self._normalize_number(number)
+        with SessionLocal() as db:
+            row = db.execute(select(ConversationState).where(ConversationState.id == key)).scalar_one_or_none()
+            if not row:
+                row = ConversationState(id=key)
+                db.add(row)
+            
+            row.state_json = state
+            db.commit()
 
     def set_paused(self, number: str, seconds: int):
         state = self.get_state(number)
         state["bot_paused_until"] = int(time.time()) + int(seconds)
+        self.save_state(number, state)
 
     def is_paused(self, number: str) -> bool:
         state = self.get_state(number)

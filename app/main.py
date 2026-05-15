@@ -427,6 +427,9 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
     # 📤 Envio de resposta (nunca derrubar webhook)
     # ========================================
     logger.info("SEND_TEXT: to=%s chars=%s", number, len(reply or ""))
+    
+    # Salva o estado atualizado no Banco
+    store.save_state(number, state)
 
     try:
         await evo.send_text(instance, number, reply)

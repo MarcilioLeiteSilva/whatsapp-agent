@@ -128,3 +128,9 @@ class PlanFeature(Base):
     value_json = Column(JSONB, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+
+class ConversationState(Base):
+    __tablename__ = "conversation_states"
+    id = Column(Text, primary_key=True) # Normalized phone number
+    state_json = Column(JSONB, nullable=False, server_default="{}")
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
