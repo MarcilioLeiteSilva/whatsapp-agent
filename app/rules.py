@@ -161,3 +161,22 @@ async def reply_for(number: str, text: str, state: dict, agent: any = None) -> s
         return await ai_service.ai_fallback_reply(user_text=text, agent_rules=agent_rules)
 
     return "Não entendi 😅 Digite *menu* para ver as opções ou *cancelar* para reiniciar."
+
+# === Intent detection (captura automática - produto) ===
+INTENT_KEYWORDS = {
+    "orcamento": ["orçamento", "orcamento", "cotação", "cotacao"],
+    "preco": ["preço", "preco", "valor", "quanto custa", "quanto fica"],
+    "transferencia": ["transferência", "transferencia", "transferir"],
+    "documento": ["documento", "documentos", "crlv", "licenciamento"],
+    "atendente": ["atendente", "humano", "falar com", "suporte"],
+}
+
+def detect_intents(text: str) -> list[str]:
+    t = (text or "").lower().strip()
+    found: list[str] = []
+    for key, kws in INTENT_KEYWORDS.items():
+        for kw in kws:
+            if kw in t:
+                found.append(key)
+                break
+    return found
