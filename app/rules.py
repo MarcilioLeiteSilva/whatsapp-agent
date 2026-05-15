@@ -4,7 +4,9 @@ import json
 import logging
 from zoneinfo import ZoneInfo
 from . import ai_service
+from .store import MemoryStore
 
+store = MemoryStore()
 logger = logging.getLogger("agent")
 TZ = ZoneInfo("America/Sao_Paulo")
 
@@ -146,7 +148,7 @@ async def reply_for(number: str, text: str, state: dict, agent: any = None) -> s
 
     # 2. Roteamento por Estado (Workflow Engine)
     if step == "inventory_pending":
-        return await handle_inventory_pending(text, state)
+        return await handle_inventory_pending(text, state, number)
     
     if step == "inventory_collecting":
         return await handle_inventory_collecting(text, state)
