@@ -18,8 +18,18 @@ class MemoryStore:
         self.seen_ids.add(message_id)
         return False
 
+    def _normalize_number(self, number: str) -> str:
+        # Remove tudo que não é dígito
+        digits = "".join(c for c in (number or "") if c.isdigit())
+        # Para o Brasil (55), o número pode vir com ou sem o 9 extra.
+        # Pegar os últimos 10 dígitos (DDD + 8 números) costuma ser o mais estável para bater.
+        if len(digits) >= 10:
+            return digits[-10:]
+        return digits
+
     def get_state(self, number: str):
-        return self.user_state.setdefault(number, {})
+        key = self._normalize_number(number)
+        return self.user_state.setdefault(key, {})
 
     def set_paused(self, number: str, seconds: int):
         state = self.get_state(number)

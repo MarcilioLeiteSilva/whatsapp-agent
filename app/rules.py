@@ -91,10 +91,24 @@ async def reply_for(number: str, text: str, state: dict, agent: any = None) -> s
     # =========================================================
     # 📦 Fluxo de Inventário (Agente de Acertos)
     # =========================================================
-    if state.get("step") == "inventory_pending":
-        # Se IA habilitada, tentamos extrair com IA
+    if state.get("step") in ("inventory_pending", "inventory_collecting"):
         items_to_check = state.get("inventory_items", [])
         
+        # Se o usuário está apenas confirmando o início ("Sim", "Vamos", "Ok")
+        affirmative = ("sim", "vamos", "ok", "pode", "estou pronto", "bora", "claro", "beleza", "tá", "ta", "com certeza")
+        if state.get("step") == "inventory_pending" and any(word in t for word in affirmative):
+            if not items_to_check:
+                return "Certo! No momento não identifiquei itens pendentes para acerto. Caso tenha algo aí, pode me falar o nome e a quantidade."
+            
+            msg = "Excelente! 🚀 Aqui estão os itens que constam para o seu PDV:\n\n"
+            for i in items_to_check:
+                msg += f"📦 *{i['product_name']}*\n"
+            
+            msg += "\n*O que você ainda tem em mãos destes produtos?*\n(Pode enviar tudo de uma vez, ex: 'Tenho 5 de um e 2 do outro')"
+            state["step"] = "inventory_collecting"
+            return msg
+
+        # Processamento do Inventário (IA ou Manual)
         if ai_service.AI_ENABLED:
             prompt = (
                 f"O usuário enviou uma resposta sobre o estoque: \"{text}\"\n\n"
@@ -107,30 +121,31 @@ async def reply_for(number: str, text: str, state: dict, agent: any = None) -> s
             
             ai_res = await ai_service.ai_extract_json(prompt=prompt)
             try:
-                # Limpa possível Markdown da IA
                 clean_json = re.sub(r'```json|```', '', ai_res or "[]").strip()
                 extracted_items = json.loads(clean_json)
                 if isinstance(extracted_items, list) and len(extracted_items) > 0:
                     state["step"] = "inventory_completed"
                     state["inventory_data"] = {"items": extracted_items}
-                    return "Recebido! ✅ Já registrei as quantidades informadas no sistema. Muito obrigado!"
+                    return "Recebido! ✅ Já registrei as quantidades informadas no sistema. Muito obrigado pela colaboração!"
             except:
                 pass
 
         # Fallback para parsing manual (legado/simples)
         data = parse_inventory(text)
-        
-        # Se só temos um item pendente, mapeamos para ele
-        if len(items_to_check) == 1:
+        if data["restantes"] > 0 or data["avarias"] > 0 or data["perdas"] > 0:
+            if len(items_to_check) == 1:
+                state["step"] = "inventory_completed"
+                state["inventory_data"] = {
+                    "items": [{"lot_id": items_to_check[0]["lot_id"], "remaining": data["restantes"]}]
+                }
+                return f"Recebido! ✅ Registrei {data['restantes']} unidades de {items_to_check[0]['product_name']}. Obrigado!"
+            
             state["step"] = "inventory_completed"
-            state["inventory_data"] = {
-                "items": [{"lot_id": items_to_check[0]["lot_id"], "remaining": data["restantes"]}]
-            }
-            return f"Recebido! ✅ Registrei {data['restantes']} unidades de {items_to_check[0]['product_name']}. Obrigado!"
+            state["inventory_data"] = data
+            return "Recebido! ✅ Já registrei as informações. Obrigado!"
         
-        state["step"] = "inventory_completed"
-        state["inventory_data"] = data # Mantém legado se falhar
-        return "Recebido! ✅ Processando os dados informados..."
+        # Se não entendeu nada e não foi um "Sim", pede para ser mais específico
+        return "Não consegui identificar as quantidades. 😅 Pode me informar quantos itens você tem de cada produto listado acima?"
 
     # =========================================================
     # 📝 Coleta Nome + Telefone + Assunto (SEMPRE, mesmo fora do horário)
