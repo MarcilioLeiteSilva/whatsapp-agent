@@ -61,9 +61,15 @@ def in_business_hours(now: datetime) -> bool:
     return BUSINESS_START <= t <= BUSINESS_END
 
 
-def reply_for(number: str, text: str, state: dict) -> str | None:
+from . import ai_service
+import json
+
+async def reply_for(number: str, text: str, state: dict, agent: any = None) -> str | None:
     t = normalize(text)
     now = datetime.now(TZ)
+    
+    # Busca regras do agente (branding, etc)
+    agent_rules = getattr(agent, "rules_json", {}) if agent else {}
 
     # =========================================================
     # 🔁 Comandos para reativar bot (sempre funcionam)
@@ -86,23 +92,45 @@ def reply_for(number: str, text: str, state: dict) -> str | None:
     # 📦 Fluxo de Inventário (Agente de Acertos)
     # =========================================================
     if state.get("step") == "inventory_pending":
-        data = parse_inventory(text)
-        closing_id = state.get("closing_id")
+        # Se IA habilitada, tentamos extrair com IA
+        items_to_check = state.get("inventory_items", [])
         
-        # Aqui dispararíamos o webhook assíncrono para o Consigo
-        # Para fins de simplicidade neste middleware, podemos usar um print ou log
-        # Em produção, isso seria uma tarefa de background (Celery/Task)
+        if ai_service.AI_ENABLED:
+            prompt = (
+                f"O usuário enviou uma resposta sobre o estoque: \"{text}\"\n\n"
+                f"Temos os seguintes itens pendentes:\n"
+                + "\n".join([f"- {i['product_name']} (ID: {i['lot_id']})" for i in items_to_check]) + "\n\n"
+                "Extraia as quantidades restantes de cada item. Retorne APENAS um JSON no formato:\n"
+                "[{\"lot_id\": \"id\", \"remaining\": quantidade}, ...]\n"
+                "Se não encontrar algum, ignore-o no JSON."
+            )
+            
+            ai_res = await ai_service.ai_fallback_reply(user_text=prompt, agent_rules=agent_rules)
+            try:
+                # Limpa possível Markdown da IA
+                clean_json = re.sub(r'```json|```', '', ai_res or "[]").strip()
+                extracted_items = json.loads(clean_json)
+                if isinstance(extracted_items, list) and len(extracted_items) > 0:
+                    state["step"] = "inventory_completed"
+                    state["inventory_data"] = {"items": extracted_items}
+                    return "Recebido! ✅ Já registrei as quantidades informadas no sistema. Muito obrigado!"
+            except:
+                pass
+
+        # Fallback para parsing manual (legado/simples)
+        data = parse_inventory(text)
+        
+        # Se só temos um item pendente, mapeamos para ele
+        if len(items_to_check) == 1:
+            state["step"] = "inventory_completed"
+            state["inventory_data"] = {
+                "items": [{"lot_id": items_to_check[0]["lot_id"], "remaining": data["restantes"]}]
+            }
+            return f"Recebido! ✅ Registrei {data['restantes']} unidades de {items_to_check[0]['product_name']}. Obrigado!"
         
         state["step"] = "inventory_completed"
-        state["inventory_data"] = data
-        
-        # Mensagem de confirmação para o lojista
-        return (
-            f"Recebido! ✅\n"
-            f"- Restantes: {data['restantes']}\n"
-            f"- Avarias: {data['avarias']}\n"
-            f"Obrigado pelas informações. Já registrei no sistema."
-        )
+        state["inventory_data"] = data # Mantém legado se falhar
+        return "Recebido! ✅ Processando os dados informados..."
 
     # =========================================================
     # 📝 Coleta Nome + Telefone + Assunto (SEMPRE, mesmo fora do horário)
@@ -111,7 +139,6 @@ def reply_for(number: str, text: str, state: dict) -> str | None:
         raw = (text or "").strip()
         lines = [l.strip() for l in raw.split("\n") if l.strip()]
 
-        # Se não vier em 3 linhas, tenta separar por delimitadores comuns
         if len(lines) < 3:
             tmp = (
                 raw.replace("|", "\n")
@@ -139,12 +166,10 @@ def reply_for(number: str, text: str, state: dict) -> str | None:
         telefone = lines[1]
         assunto = lines[2]
 
-        # validação simples do telefone
         numeros = "".join(c for c in telefone if c.isdigit())
         if len(numeros) < 8:
             return "O telefone parece inválido. Envie novamente 🙂"
 
-        # salva no estado (para o main.py gravar CSV)
         state["lead"] = {
             "nome": nome,
             "telefone": telefone,
@@ -152,7 +177,6 @@ def reply_for(number: str, text: str, state: dict) -> str | None:
             "timestamp": int(now.timestamp())
         }
 
-        # pausa bot por X minutos e encerra
         state["bot_paused_until"] = int(now.timestamp()) + PAUSE_MINUTES_ON_HANDOFF * 60
         state["step"] = "lead_captured"
 
@@ -162,9 +186,14 @@ def reply_for(number: str, text: str, state: dict) -> str | None:
         )
 
     # =========================================================
-    # 🕒 Fora do horário: orienta e permite pedir atendente
+    # 🕒 Fora do horário
     # =========================================================
     if not in_business_hours(now):
+        # Se IA habilitada, deixa ela responder de forma educada
+        if ai_service.AI_ENABLED:
+            ai_reply = await ai_service.ai_fallback_reply(user_text=text, agent_rules=agent_rules)
+            if ai_reply: return ai_reply
+
         if t in ("menu", "oi", "olá", "ola", "inicio", "início", "start"):
             return (
                 "Oi! 😊 No momento estamos *fora do horário* (seg-sex, 9h às 18h).\n\n"
@@ -189,6 +218,11 @@ def reply_for(number: str, text: str, state: dict) -> str | None:
     # =========================================================
     if t in ("menu", "oi", "olá", "ola", "inicio", "início", "start"):
         state["step"] = "menu"
+        # Se IA habilitada, deixa ela dar as boas vindas
+        if ai_service.AI_ENABLED:
+            ai_reply = await ai_service.ai_fallback_reply(user_text=text, agent_rules=agent_rules)
+            if ai_reply: return ai_reply
+            
         return (
             "Oi! 😊 Sou o atendimento automático.\n\n"
             "Digite uma opção:\n"
@@ -233,6 +267,14 @@ def reply_for(number: str, text: str, state: dict) -> str | None:
                 "Um atendente continuará com você."
             )
         return "Responda com A, B ou C 🙂"
+
+    # =========================================================
+    # 🤖 FALLBACK IA (Se nada acima capturou)
+    # =========================================================
+    if ai_service.AI_ENABLED:
+        ai_reply = await ai_service.ai_fallback_reply(user_text=text, agent_rules=agent_rules)
+        if ai_reply:
+            return ai_reply
 
     return "Não entendi 😅 Digite *menu* para ver as opções."
 

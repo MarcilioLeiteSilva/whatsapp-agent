@@ -52,12 +52,11 @@ async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str
     payload = {
         "event": "inventory_result",
         "closing_id": closing_id,
-        "restantes": data.get("restantes", 0),
-        "avarias": data.get("avarias", 0),
-        "perdas": data.get("perdas", 0),
-        "raw_message": raw_text,
-        "from_number": number,
-        "instance": instance
+        "instance_name": instance,
+        "pdv_phone": number,
+        "items": data.get("items", []),
+        "notes": data.get("notes", ""),
+        "raw_message": raw_text
     }
     
     async with httpx.AsyncClient(timeout=10) as client:
@@ -371,7 +370,7 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
     # ========================================
     # 🤖 Regras normais do bot
     # ========================================
-    reply = reply_for(number, text, state)
+    reply = await reply_for(number, text, state, agent=agent)
     logger.info("RULES_REPLY: number=%s reply=%r step=%s", number, reply, (state or {}).get("step"))
 
     if reply is None:

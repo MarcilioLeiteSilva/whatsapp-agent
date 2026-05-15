@@ -25,11 +25,17 @@ class InstanceResponse(BaseModel):
     hash: Optional[str] = None
     qrcode: Optional[str] = None
 
+class InventoryItem(BaseModel):
+    lot_id: str
+    product_name: str
+    expected_quantity: int
+
 class InventoryStart(BaseModel):
     instance_name: str
     pdv_phone: str
     closing_id: int
     message: str
+    items: Optional[list[InventoryItem]] = []
 
 # --- Auth ---
 async def verify_key(x_integration_key: str = Header(...)):
@@ -164,6 +170,7 @@ async def start_inventory(data: InventoryStart, _ = Depends(verify_key)):
         state = store.get_state(data.pdv_phone)
         state["step"] = "inventory_pending"
         state["closing_id"] = data.closing_id
+        state["inventory_items"] = [item.dict() for item in (data.items or [])]
         
         # 2. Enviar mensagem inicial via Evolution
         await evo.send_text(data.instance_name, data.pdv_phone, data.message)
