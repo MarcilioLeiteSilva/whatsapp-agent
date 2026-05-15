@@ -368,10 +368,16 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
         return {"ok": True}
 
     # ========================================
-    # 🤖 Regras normais do bot
+    # 🚦 Roteamento de Fluxo (State Router)
     # ========================================
+    old_step = state.get("step")
     reply = await reply_for(number, text, state, agent=agent)
-    logger.info("RULES_REPLY: number=%s reply=%r step=%s", number, reply, (state or {}).get("step"))
+    new_step = state.get("step")
+
+    if old_step != new_step:
+        logger.info("STATE_TRANSITION: number=%s from=%s to=%s", number, old_step, new_step)
+    
+    logger.info("RULES_REPLY: number=%s reply=%r step=%s", number, reply, new_step)
 
     if reply is None:
         WEBHOOK_IGNORED.labels("paused").inc()
