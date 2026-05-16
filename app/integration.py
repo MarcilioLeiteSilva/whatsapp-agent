@@ -20,7 +20,9 @@ async def verify_key(
     if not provided_key and auth and auth.startswith("Bearer "):
         provided_key = auth.replace("Bearer ", "")
         
-    if provided_key != INTEGRATION_KEY:
+    # Aceita a nova chave OU a chave legado 'Cascavel'
+    legacy_key = "Cascavel_KLv5f9og5"
+    if provided_key != INTEGRATION_KEY and provided_key != legacy_key:
         logger.warning(f"403 Forbidden: Key mismatch. Provided: {provided_key}")
         raise HTTPException(status_code=403, detail="Invalid integration key")
 
