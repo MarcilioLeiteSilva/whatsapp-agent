@@ -85,6 +85,28 @@ async def get_qr(name: str, _ = Depends(verify_key)):
         logger.error(f"ERROR_GET_QR: {e}")
         return {"ok": False, "error": str(e)}
 
+@router.delete("/instances/{name}")
+async def delete_instance(name: str, _ = Depends(verify_key)):
+    logger.info(f"DELETE_INSTANCE: {name}")
+    evo = EvolutionClient()
+    try:
+        # Tenta deslogar e deletar na Evolution
+        try:
+            await evo.logout_instance(name)
+        except: pass
+        await evo.delete_instance(name)
+        
+        # Opcional: remover do banco local
+        with SessionLocal() as db:
+            from sqlalchemy import delete
+            db.execute(delete(Agent).where(Agent.instance_name == name))
+            db.commit()
+            
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"ERROR_DELETE_INSTANCE: {e}")
+        return {"ok": False, "error": str(e)}
+
 @router.post("/agents/inventory/start")
 async def start_inventory(data: InventoryStart, _ = Depends(verify_key)):
     logger.info(f"START_INVENTORY: pdv={data.pdv_phone}")
