@@ -1,0 +1,5 @@
+# Backup Realizado em 15/05/2026
+# Status: SISTEMA 100% FUNCIONAL (QR Code OK, Robô OK, Desconexão OK)
+
+Este diretório contém as cópias de segurança dos arquivos que garantem a estabilidade do sistema.
+Em caso de crash, basta copiar estes arquivos de volta para a pasta /app/.

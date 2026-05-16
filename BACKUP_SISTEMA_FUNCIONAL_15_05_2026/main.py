@@ -52,7 +52,7 @@ async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str
         "instance_name": instance,
         "pdv_phone": number,
         "items": data.get("items", []),
-        "notes": raw_text
+        "raw_message": raw_text
     }
     async with httpx.AsyncClient(timeout=10) as client:
         try:
