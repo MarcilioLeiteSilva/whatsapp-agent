@@ -44,11 +44,11 @@ app.include_router(integration_router)
 
 async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str, instance: str):
     from .settings import CONSIGO_WEBHOOK_URL, INTEGRATION_KEY
-    if not CONSIGO_WEBHOOK_URL:
-        logger.error("CONSIGO_WEBHOOK_URL is NOT SET in environment variables!")
-        return
+    # Garante que a URL tenha o caminho correto do webhook
+    base_url = CONSIGO_WEBHOOK_URL.rstrip("/")
+    target_url = f"{base_url}/webhooks/whatsapp/inventory"
     
-    logger.info(f"Attempting to send webhook to: {CONSIGO_WEBHOOK_URL}")
+    logger.info(f"Attempting to send webhook to: {target_url}")
     
     payload = {
         "event": "inventory_result",

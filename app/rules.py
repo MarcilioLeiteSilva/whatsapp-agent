@@ -73,11 +73,15 @@ async def handle_inventory_collecting(text: str, state: dict) -> str:
         return summary
 
     prompt = (
-        f"O usuário enviou uma resposta sobre o estoque: \"{text}\"\n\n"
-        f"Temos os seguintes itens pendentes:\n"
+        f"Instrução: O lojista está informando o estoque atual dos produtos. Extraia EXATAMENTE as quantidades que ele possui em mãos agora.\n"
+        f"Mensagem do lojista: \"{text}\"\n\n"
+        f"Produtos esperados para conferência:\n"
         + "\n".join([f"- {i['product_name']} (ID: {i['lot_id']})" for i in items_to_check]) + "\n\n"
-        "Extraia as quantidades restantes de cada item. Retorne APENAS um JSON no formato:\n"
-        "[{\"lot_id\": \"id\", \"remaining\": quantidade, \"product_name\": \"nome\"}, ...]\n"
+        "REGRAS CRÍTICAS:\n"
+        "1. Ignore números que pareçam ser o total esperado (ex: se ele tem 3 de 15, o valor é 3).\n"
+        "2. Se ele não mencionar um produto, use o valor 'expected' original.\n"
+        "3. Retorne APENAS o JSON no formato:\n"
+        "[{\"lot_id\": \"id\", \"remaining\": quantidade, \"product_name\": \"nome\"}]\n"
     )
     
     ai_res = await ai_service.ai_extract_json(prompt=prompt)
