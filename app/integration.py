@@ -32,10 +32,14 @@ async def start_inventory(data: InventoryStart, _ = Depends(verify_key)):
     store = MemoryStore()
     
     state = store.get_state(data.pdv_phone)
+    state.clear()
     state["step"] = "inventory_pending"
     state["closing_id"] = data.closing_id
     state["inventory_items"] = [item.dict() for item in (data.items or [])]
     state["notified_consigo"] = False
+    
+    # Acorda o robô
+    store.set_paused(data.pdv_phone, 0)
     
     store.save_state(data.pdv_phone, state)
     await evo.send_text(data.instance_name, data.pdv_phone, data.message)
