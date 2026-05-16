@@ -48,7 +48,9 @@ async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str
     base_url = CONSIGO_WEBHOOK_URL.rstrip("/")
     target_url = f"{base_url}/webhook/whatsapp/inventory"
     
-    logger.info(f"[WEBHOOK_LOG] Attempting to send result to: {target_url}")
+    # LOG TEMPORÁRIO PARA DEBUG
+    key_preview = CONSIGO_WEBHOOK_KEY[:4] if CONSIGO_WEBHOOK_KEY else "NONE"
+    logger.info(f"[WEBHOOK_LOG] Sending to {target_url} with key prefix: {key_preview}...")
     
     payload = {
         "event": "inventory_result",
