@@ -7,8 +7,8 @@ EVOLUTION_BASE_URL = os.getenv("EVOLUTION_BASE_URL", "").rstrip("/")
 EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "")
 EVOLUTION_TOKEN = os.getenv("EVOLUTION_TOKEN", "")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
-# FLUXO 1: ERP -> AGENTE (Administração/QR/Status)
-INTEGRATION_API_KEY = os.getenv("WHATSAPP_AGENT_KEY") or os.getenv("INTEGRATION_KEY") or "Cascavel_KLv5f9og5"
+# FLUXO 1: ERP -> AGENTE (Administração/QR/Status) - MANTIDO NOME ORIGINAL
+INTEGRATION_KEY = os.getenv("WHATSAPP_AGENT_KEY") or os.getenv("INTEGRATION_KEY") or "Cascavel_KLv5f9og5"
 
 # FLUXO 2: AGENTE -> ERP (Entrega de Acerto/Webhook)
 CONSIGO_WEBHOOK_KEY = os.getenv("CONSIGO_WEBHOOK_KEY") or "Consigo_Secure_Key_v1_2026_Agent"

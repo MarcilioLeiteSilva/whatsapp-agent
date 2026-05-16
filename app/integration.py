@@ -15,14 +15,14 @@ async def verify_key(
     x_key: Optional[str] = Header(None, alias="x-integration-key"),
     auth: Optional[str] = Header(None, alias="Authorization")
 ):
-    from .settings import INTEGRATION_API_KEY
+    from .settings import INTEGRATION_KEY
     
     # Tenta pegar do x-integration-key ou do Bearer token
     provided_key = x_key
     if not provided_key and auth and auth.startswith("Bearer "):
         provided_key = auth.replace("Bearer ", "")
         
-    if provided_key != INTEGRATION_API_KEY:
+    if provided_key != INTEGRATION_KEY:
         logger.warning(f"403 Forbidden: Management key mismatch. Provided: {provided_key}")
         raise HTTPException(status_code=403, detail="Invalid integration key")
 
