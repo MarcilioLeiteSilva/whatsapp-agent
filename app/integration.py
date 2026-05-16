@@ -63,7 +63,7 @@ async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
 async def get_status(name: str, _ = Depends(verify_key)):
     evo = EvolutionClient()
     try:
-        status = await evo.get_connection_status(name)
+        status = await evo.get_connection_state(name)
         return {"ok": True, "status": status}
     except Exception as e:
         return {"ok": False, "error": str(e)}
