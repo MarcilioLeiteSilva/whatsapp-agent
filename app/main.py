@@ -119,8 +119,11 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
             state.clear()
         
         store.save_state(number, state)
-        await evo.send_text(instance, number, reply)
-        MSG_SENT_OK.inc()
+        try:
+            await evo.send_text(instance, number, reply)
+            MSG_SENT_OK.inc()
+        except Exception as e:
+            logger.error(f"Failed to send final message but state was saved: {e}")
     
     WEBHOOK_LATENCY.observe(time.time() - start)
     return {"ok": True}

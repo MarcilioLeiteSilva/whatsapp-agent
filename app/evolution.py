@@ -16,6 +16,8 @@ class EvolutionClient:
         async with httpx.AsyncClient(timeout=30) as client:
             try:
                 r = await client.request(method, url, json=json, params=params, headers=self.headers)
+                if r.status_code >= 400:
+                    logger.error(f"Evolution API Error Body: {r.text}")
                 r.raise_for_status()
                 return r.json()
             except Exception as e:
@@ -23,8 +25,10 @@ class EvolutionClient:
                 raise
 
     async def send_text(self, instance: str, number: str, text: str):
+        # Garante que o número tenha apenas dígitos
+        clean_number = "".join(filter(str.isdigit, number))
         path = f"/message/sendText/{instance}"
-        payload = {"number": number, "text": text}
+        payload = {"number": clean_number, "text": text}
         return await self._request("POST", path, json=payload)
 
     async def create_instance(self, instance_name: str):
