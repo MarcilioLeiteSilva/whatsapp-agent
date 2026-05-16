@@ -1,80 +1,60 @@
 # Relatório de Implementação: QR Code & Integração Evolution API
 
-Este documento detalha a arquitetura de conexão entre a plataforma **Consigo**, o **Agente WhatsApp** e a **Evolution API**, focando na geração de QR Code, gestão de instâncias e protocolos de recuperação.
+Este documento detalha a infraestrutura de conexão e serve como guia de recuperação em caso de falhas no Agente WhatsApp.
 
 ## 1. Arquitetura da Integração
-
-A comunicação segue o fluxo:
-`Plataforma Consigo (Frontend/Backend)` <-> `Agente WhatsApp (Python/FastAPI)` <-> `Evolution API (Baileys)`
-
-### Componentes Chave:
-- **Evolution API:** Gerencia as sessões reais do WhatsApp.
-- **Agente WhatsApp:** Atua como um middleware que simplifica a API da Evolution e adiciona lógica de estado (State Machine) e banco de dados local.
-- **Consigo Backend:** Gerencia os registros de PDV e solicita ao Agente a criação de conexões.
+`Plataforma Consigo` <-> `Agente WhatsApp (Python)` <-> `Evolution API`
 
 ---
 
-## 2. Endpoints Críticos (Agente WhatsApp)
+## 2. Parâmetros Necessários no Banco de Dados
 
-Para o funcionamento do QR Code, o Agente **deve** expor as seguintes rotas em `app/integration.py`:
+O Agente utiliza o PostgreSQL (via SQLAlchemy) para persistir as instâncias. Se estas tabelas não estiverem corretas, o comando de conexão (QR Code) falhará com erro 500.
 
-| Método | Rota | Descrição |
-| :--- | :--- | :--- |
-| **POST** | `/v1/integration/instances` | Cria a instância na Evolution e registra no DB local. |
-| **GET** | `/v1/integration/instances/{name}/status` | Retorna o estado bruto da conexão (CONNECTED/DISCONNECTED). |
-| **GET** | `/v1/integration/instances/{name}/qr` | Retorna o objeto de pareamento (base64) da Evolution. |
-| **DELETE** | `/v1/integration/instances/{name}` | Desloga e remove a instância da Evolution. |
+### Tabela `agents` (Modelo `Agent`)
+É onde as instâncias são registradas para que o robô saiba a quem responder.
+- **id (String/PK):** Nome da instância (ex: `c_80463ba2`).
+- **instance (String):** **CRÍTICO!** Deve se chamar exatamente `instance`. Armazena o ID da instância na Evolution.
+- **client_id (String):** ID do Tenant na Consigo.
+- **name (String):** Nome amigável do agente.
 
----
-
-## 3. Protocolos de Resposta (Payload)
-
-A falha mais comum é o **desencontro de formato**. A Consigo espera que o Agente repasse o objeto **bruto** da Evolution para garantir a renderização do QR Code.
-
-### Exemplo de Resposta do QR Code:
-```json
-{
-  "code": "1@...",
-  "base64": "data:image/png;base64,iVBORw0KGgo...",
-  "count": 0
-}
-```
-*Nota: Se o Agente encapsular este objeto em outra chave (ex: `{"qr": {...}}`), o frontend da Consigo não conseguirá renderizar a imagem.*
+### Tabela `leads` (Modelo `Lead`)
+Registra as conversas e o estado de cada lojista.
+- **from_number:** Número do WhatsApp do lojista.
+- **status:** Estado atual da conversa.
+- **instance:** Vincula a conversa à instância correta.
 
 ---
 
-## 4. Histórico de Falhas e Soluções (Troubleshooting)
-
-### A. Erro 403 Forbidden
-- **Causa:** Token da Evolution (`EVOLUTION_TOKEN`) inválido ou ausente no `.env`.
-- **Sintoma:** Log do Agente mostra erro ao tentar `POST /instance/create`.
-- **Restauração:** Verificar as variáveis de ambiente e garantir que o header `apikey` está sendo enviado corretamente no `evolution.py`.
-
-### B. Erro 404 Not Found
-- **Causa:** Rotas não registradas no `main.py` ou `integration.py` após um revert de código.
-- **Sintoma:** Backend da Consigo reporta "Agent API Error: Not Found".
-- **Restauração:** Garantir que `app.include_router(integration_router)` está presente no `main.py`.
-
-### C. QR Code não renderiza (mesmo com 200 OK)
-- **Causa:** Mudança no nome do método ou formato do JSON.
-- **Sintoma:** O log mostra que a imagem foi enviada, mas a tela da Consigo fica em branco.
-- **Restauração:** Validar se o Agente está retornando o JSON direto da Evolution. Verificar se não houve confusão entre `get_connection_state` (nome interno) e `get_connection_status` (nome comum).
+## 3. Variáveis de Ambiente Obrigatórias (.env)
+Se estas chaves estiverem erradas, o QR Code não gera (403 Forbidden).
+- `EVOLUTION_TOKEN`: Chave da API Evolution.
+- `INTEGRATION_KEY`: Chave de segurança entre Consigo e Agente.
+- `DATABASE_URL`: Conexão com o PostgreSQL.
 
 ---
 
-## 5. Procedimento de Restauração em Caso de Crash
+## 4. Alterações Críticas que Quebram o Código (NUNCA ALTERAR)
 
-Caso o servidor pare de responder ou as rotas sumam:
+### 🔴 Estrutura do JSON de Resposta (QR e Status)
+A Consigo espera o objeto **bruto** da Evolution.
+- **Errado:** `return {"ok": True, "qr": res}` (Quebra a renderização).
+- **Correto:** `return res` (Onde `res` já contém `base64` e `code`).
 
-1. **Check de Sanidade do `main.py`:**
-   - Verifique se os roteadores `admin_router` e `integration_router` estão incluídos.
-   - Verifique se o `extract_payload` está tratando listas `[]` e objetos `{}`.
+### 🔴 Nome de Atributos do Modelo Agent
+- **Erro comum:** Tentar usar `Agent.instance_name`.
+- **Fato:** O banco de dados está mapeado como `Agent.instance`. Mudar isso causa erro 500 no `POST /instances`.
 
-2. **Check de `integration.py`:**
-   - Confirme se as 4 rotas de instância (POST, GET status, GET qr, DELETE) existem.
-
-3. **Check de `evolution.py`:**
-   - Garanta que a URL base não termina com `/` duplicada e que o `apikey` está no `__init__`.
+### 🔴 Indentação em Handlers de IA
+O arquivo `rules.py` utiliza blocos `try/except` para extração de JSON via IA. Se a indentação for alterada, o robô para de processar as quantidades informadas pelos lojistas.
 
 ---
-*Relatório gerado em 15/05/2026 para fins de auditoria e manutenção técnica.*
+
+## 5. Protocolo de Recuperação (Checklist)
+
+1. **Erro 500 ao conectar?** Verifique se o código está usando `Agent.instance` (e não `instance_name`).
+2. **QR Code não aparece (mas dá 200 OK)?** Verifique se a rota `/qr` no `integration.py` está retornando o objeto bruto (`return res`).
+3. **Robô não responde?** Verifique se o `main.py` não está bloqueando o número por estar no modo de "Pausa" (Silêncio pós-acerto).
+
+---
+*Atualizado em 15/05/2026 - Versão de Estabilidade Garantida.*
