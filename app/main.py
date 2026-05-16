@@ -43,8 +43,11 @@ app.include_router(admin_router)
 app.include_router(integration_router)
 
 async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str, instance: str):
-    from .settings import CONSIGO_WEBHOOK_URL
-    if not CONSIGO_WEBHOOK_URL: return
+    if not CONSIGO_WEBHOOK_URL:
+        logger.error("CONSIGO_WEBHOOK_URL is NOT SET in environment variables!")
+        return
+    
+    logger.info(f"Attempting to send webhook to: {CONSIGO_WEBHOOK_URL}")
     
     payload = {
         "event": "inventory_result",
@@ -56,7 +59,7 @@ async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str
     }
     async with httpx.AsyncClient(timeout=10) as client:
         try:
-            r = await client.post(CONSIGO_WEBHOOK_URL, json=payload)
+            r = await client.post(CONSIGO_WEBHOOK_URL, json=payload, headers={"x-integration-key": os.getenv("WHATSAPP_AGENT_KEY", "")})
             logger.info(f"Webhook sent to Consigo: {r.status_code}")
         except Exception as e:
             logger.error(f"Error sending webhook: {e}")
