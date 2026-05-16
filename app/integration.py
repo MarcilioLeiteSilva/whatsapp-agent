@@ -37,8 +37,11 @@ async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
     logger.info(f"CREATE_INSTANCE: {data.instance_name}")
     evo = EvolutionClient()
     try:
-        # Garante que a instância existe na Evolution
-        await evo.create_instance(data.instance_name)
+        # Tenta criar. Se já existir, a Evolution pode dar erro, mas ignoramos para seguir
+        try:
+            await evo.create_instance(data.instance_name)
+        except Exception as e:
+            logger.warning(f"Instance creation notice (may already exist): {e}")
         
         # Vincula no nosso banco de dados (lead_logger)
         with SessionLocal() as db:
