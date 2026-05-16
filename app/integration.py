@@ -11,8 +11,17 @@ from .models import Agent
 router = APIRouter(prefix="/v1/integration")
 logger = logging.getLogger("agent")
 
-async def verify_key(x_integration_key: str = Header(None)):
-    if INTEGRATION_KEY and x_integration_key != INTEGRATION_KEY:
+async def verify_key(
+    x_key: Optional[str] = Header(None, alias="x-integration-key"),
+    auth: Optional[str] = Header(None, alias="Authorization")
+):
+    # Tenta pegar do x-integration-key ou do Bearer token
+    provided_key = x_key
+    if not provided_key and auth and auth.startswith("Bearer "):
+        provided_key = auth.replace("Bearer ", "")
+        
+    if provided_key != INTEGRATION_KEY:
+        logger.warning(f"403 Forbidden: Key mismatch. Provided: {provided_key}")
         raise HTTPException(status_code=403, detail="Invalid integration key")
 
 class InventoryItem(BaseModel):
