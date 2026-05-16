@@ -44,11 +44,11 @@ app.include_router(integration_router)
 
 async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str, instance: str):
     from .settings import CONSIGO_WEBHOOK_URL, INTEGRATION_KEY
-    # Garante que a URL tenha o caminho correto do webhook
+    # PASSO 1: Garante que a URL tenha o caminho correto (SINGULAR)
     base_url = CONSIGO_WEBHOOK_URL.rstrip("/")
-    target_url = f"{base_url}/webhooks/whatsapp/inventory"
+    target_url = f"{base_url}/webhook/whatsapp/inventory"
     
-    logger.info(f"Attempting to send webhook to: {target_url}")
+    logger.info(f"[WEBHOOK_LOG] Attempting to send result to: {target_url}")
     
     payload = {
         "event": "inventory_result",
@@ -60,11 +60,10 @@ async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str
     }
     async with httpx.AsyncClient(timeout=10) as client:
         try:
-            # Usamos a INTEGRATION_KEY definida no settings
-            r = await client.post(CONSIGO_WEBHOOK_URL, json=payload, headers={"x-integration-key": INTEGRATION_KEY})
-            logger.info(f"Webhook sent to Consigo: {r.status_code}")
+            r = await client.post(target_url, json=payload, headers={"x-integration-key": INTEGRATION_KEY})
+            logger.info(f"[WEBHOOK_LOG] Delivery result: {r.status_code}")
         except Exception as e:
-            logger.error(f"Error sending webhook: {e}")
+            logger.error(f"[WEBHOOK_LOG] Delivery failed: {e}")
 
 def extract_text(msg: dict) -> str:
     if not isinstance(msg, dict): return ""
@@ -102,12 +101,19 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
         payload = await req.json()
     except: return {"ok": True}
 
+    # [WEBHOOK_LOG] Início do processamento
     instance, message_id, number, text, from_me, is_group, event, status = extract_payload(payload)
+    
     if from_me or is_group: return {"ok": True}
+    
+    # PASSO 2: Validar telefone antes de qualquer ação
+    if not number or len(number) < 5:
+        logger.error(f"[EVOLUTION_LOG] Invalid phone number detected: '{number}'")
+        return {"ok": True}
 
-    # Check de Pausa (Silêncio pós-acerto)
+    # PASSO 3: Bloquear mensagens após CLOSED (Check de Pausa)
     if store.is_paused(number):
-        logger.info("BOT_PAUSED: ignoring number=%s", number)
+        logger.info(f"[SETTLEMENT_LOG] BOT_PAUSED: Ignoring number={number}")
         return {"ok": True}
 
     agent = get_agent_by_instance(instance)
@@ -117,18 +123,35 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
     reply = await reply_for(number, text, state, agent=agent)
     
     if reply:
+        # PASSO 2: Salvar estado e disparar ações ANTES de limpar ou fechar
+        store.save_state(number, state)
+        
         if state.get("step") == "inventory_completed" and not state.get("notified_consigo"):
+            logger.info(f"[SETTLEMENT_LOG] Inventory completed for {number}. Dispatched to Consigo.")
             background_tasks.add_task(notify_consigo, state.get("closing_id"), state.get("inventory_data"), text, number, instance)
             state["notified_consigo"] = True
+            
+            # PASSO 2 & 3: Enviamos a mensagem FINAL antes de limpar o estado
+            try:
+                await evo.send_text(instance, number, reply)
+                logger.info(f"[EVOLUTION_LOG] Final message sent to {number}")
+                MSG_SENT_OK.inc()
+            except Exception as e:
+                logger.error(f"[EVOLUTION_LOG] Failed to send final message: {e}")
+            
+            # Somente AGORA limpamos e pausamos
             store.set_paused(number, 31536000)
             state.clear()
-        
-        store.save_state(number, state)
-        try:
-            await evo.send_text(instance, number, reply)
-            MSG_SENT_OK.inc()
-        except Exception as e:
-            logger.error(f"Failed to send final message but state was saved: {e}")
+            store.save_state(number, state)
+        else:
+            # Fluxo normal de conversa
+            try:
+                await evo.send_text(instance, number, reply)
+                MSG_SENT_OK.inc()
+            except Exception as e:
+                logger.error(f"[EVOLUTION_LOG] Error sending message: {e}")
+            
+            store.save_state(number, state)
     
     WEBHOOK_LATENCY.observe(time.time() - start)
     return {"ok": True}
