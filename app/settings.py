@@ -11,6 +11,6 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 INTEGRATION_KEY = os.getenv("WHATSAPP_AGENT_KEY") or os.getenv("INTEGRATION_KEY") or "Cascavel_KLv5f9og5"
 
 # FLUXO 2: AGENTE -> ERP (Entrega de Acerto/Webhook)
-CONSIGO_WEBHOOK_KEY = os.getenv("CONSIGO_WEBHOOK_KEY", "consigo_inventory_secret")
+CONSIGO_WEBHOOK_KEY = (os.getenv("CONSIGO_WEBHOOK_KEY") or "consigo_inventory_secret").strip()
 AGENT_BASE_URL = os.getenv("AGENT_BASE_URL", "") # URL deste serviço para a Evolution
 CONSIGO_WEBHOOK_URL = os.getenv("CONSIGO_WEBHOOK_URL", "") # URL da plataforma Consigo
