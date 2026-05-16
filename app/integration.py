@@ -5,6 +5,8 @@ from typing import List, Optional
 from .evolution import EvolutionClient
 from .store import MemoryStore
 from .settings import INTEGRATION_KEY
+from .db import SessionLocal
+from .models import Agent
 
 router = APIRouter(prefix="/v1/integration")
 logger = logging.getLogger("agent")
@@ -25,6 +27,56 @@ class InventoryStart(BaseModel):
     message: str
     items: Optional[List[InventoryItem]] = []
 
+class InstanceCreate(BaseModel):
+    client_id: str
+    client_name: str
+    instance_name: str
+
+@router.post("/instances")
+async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
+    logger.info(f"CREATE_INSTANCE: {data.instance_name}")
+    evo = EvolutionClient()
+    try:
+        # Garante que a instância existe na Evolution
+        await evo.create_instance(data.instance_name)
+        
+        # Vincula no nosso banco de dados (lead_logger)
+        with SessionLocal() as db:
+            from sqlalchemy import select
+            agent = db.execute(select(Agent).where(Agent.instance_name == data.instance_name)).scalar_one_or_none()
+            if not agent:
+                agent = Agent(
+                    id=data.instance_name,
+                    client_id=data.client_id,
+                    instance_name=data.instance_name,
+                    name=f"Agente {data.client_name}"
+                )
+                db.add(agent)
+                db.commit()
+        
+        return {"ok": True, "instance": data.instance_name}
+    except Exception as e:
+        logger.error(f"ERROR_CREATE_INSTANCE: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/instances/{name}/status")
+async def get_status(name: str, _ = Depends(verify_key)):
+    evo = EvolutionClient()
+    try:
+        status = await evo.get_connection_status(name)
+        return {"ok": True, "status": status}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@router.get("/instances/{name}/qr")
+async def get_qr(name: str, _ = Depends(verify_key)):
+    evo = EvolutionClient()
+    try:
+        qr = await evo.get_qr_code(name)
+        return {"ok": True, "qr": qr}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 @router.post("/agents/inventory/start")
 async def start_inventory(data: InventoryStart, _ = Depends(verify_key)):
     logger.info(f"START_INVENTORY: pdv={data.pdv_phone}")
@@ -38,7 +90,7 @@ async def start_inventory(data: InventoryStart, _ = Depends(verify_key)):
     state["inventory_items"] = [item.dict() for item in (data.items or [])]
     state["notified_consigo"] = False
     
-    # Acorda o robô
+    # Acorda o robô (remove pausa se houver)
     store.set_paused(data.pdv_phone, 0)
     
     store.save_state(data.pdv_phone, state)

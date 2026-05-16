@@ -14,6 +14,7 @@ from .lead_logger import (
     ensure_first_contact,
     mark_intent,
     save_handoff_lead,
+    get_agent_by_instance
 )
 
 from .metrics import (
@@ -37,6 +38,10 @@ evo = EvolutionClient()
 store = MemoryStore()
 rl = RateLimiter(max_events=10, window_seconds=12)
 
+# Incluindo os roteadores com seus prefixos corretos
+app.include_router(admin_router)
+app.include_router(integration_router)
+
 async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str, instance: str):
     from .settings import CONSIGO_WEBHOOK_URL
     if not CONSIGO_WEBHOOK_URL: return
@@ -51,13 +56,10 @@ async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str
     }
     async with httpx.AsyncClient(timeout=10) as client:
         try:
-            await client.post(CONSIGO_WEBHOOK_URL, json=payload)
-            logger.info("Webhook sent to Consigo successfully")
+            r = await client.post(CONSIGO_WEBHOOK_URL, json=payload)
+            logger.info(f"Webhook sent to Consigo: {r.status_code}")
         except Exception as e:
             logger.error(f"Error sending webhook: {e}")
-
-app.include_router(admin_router)
-app.include_router(integration_router)
 
 def extract_text(msg: dict) -> str:
     if not isinstance(msg, dict): return ""
@@ -98,31 +100,24 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
     instance, message_id, number, text, from_me, is_group, event, status = extract_payload(payload)
     if from_me or is_group: return {"ok": True}
 
-    # Check de Pausa (Silêncio)
+    # Check de Pausa (Silêncio pós-acerto)
     if store.is_paused(number):
-        logger.info("BOT_PAUSED: number=%s", number)
+        logger.info("BOT_PAUSED: ignoring number=%s", number)
         return {"ok": True}
 
-    from .lead_logger import get_agent_by_instance
     agent = get_agent_by_instance(instance)
     if not agent: return {"ok": True}
 
-    # Estado persistente
     state = store.get_state(number)
-    
     reply = await reply_for(number, text, state, agent=agent)
     
     if reply:
-        # Notifica Consigo se concluiu
         if state.get("step") == "inventory_completed" and not state.get("notified_consigo"):
             background_tasks.add_task(notify_consigo, state.get("closing_id"), state.get("inventory_data"), text, number, instance)
             state["notified_consigo"] = True
-            
-            # Coloca para dormir após enviar
             store.set_paused(number, 31536000)
             state.clear()
         
-        # Salva estado e envia
         store.save_state(number, state)
         await evo.send_text(instance, number, reply)
         MSG_SENT_OK.inc()
