@@ -37,11 +37,13 @@ async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
     logger.info(f"CREATE_INSTANCE: {data.instance_name}")
     evo = EvolutionClient()
     try:
+        # Tenta criar a instância na Evolution
         try:
             await evo.create_instance(data.instance_name)
         except Exception as e:
-            logger.warning(f"Instance already exists: {e}")
+            logger.warning(f"Instance already exists or creation notice: {e}")
         
+        # Vincula no banco de dados local
         with SessionLocal() as db:
             from sqlalchemy import select
             agent = db.execute(select(Agent).where(Agent.instance_name == data.instance_name)).scalar_one_or_none()
@@ -64,6 +66,7 @@ async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
 async def get_status(name: str, _ = Depends(verify_key)):
     evo = EvolutionClient()
     try:
+        # Retorna o objeto BRUTO da Evolution para a Consigo
         res = await evo.get_connection_state(name)
         return res
     except Exception as e:
@@ -73,6 +76,7 @@ async def get_status(name: str, _ = Depends(verify_key)):
 async def get_qr(name: str, _ = Depends(verify_key)):
     evo = EvolutionClient()
     try:
+        # Retorna o objeto BRUTO (com base64 e code) da Evolution para a Consigo
         res = await evo.get_qr_code(name)
         return res
     except Exception as e:
@@ -92,7 +96,9 @@ async def start_inventory(data: InventoryStart, _ = Depends(verify_key)):
     state["inventory_items"] = [item.dict() for item in (data.items or [])]
     state["notified_consigo"] = False
     
+    # Acorda o robô
     store.set_paused(data.pdv_phone, 0)
+    
     store.save_state(data.pdv_phone, state)
     await evo.send_text(data.instance_name, data.pdv_phone, data.message)
     
