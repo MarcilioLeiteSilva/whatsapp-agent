@@ -37,13 +37,13 @@ async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
     logger.info(f"CREATE_INSTANCE: {data.instance_name}")
     evo = EvolutionClient()
     try:
-        # Tenta criar. Se já existir, a Evolution pode dar erro, mas ignoramos para seguir
+        # Tenta criar a instância
         try:
             await evo.create_instance(data.instance_name)
         except Exception as e:
-            logger.warning(f"Instance creation notice (may already exist): {e}")
+            logger.warning(f"Instance already exists or creation error: {e}")
         
-        # Vincula no nosso banco de dados (lead_logger)
+        # Vincula no banco de dados local
         with SessionLocal() as db:
             from sqlalchemy import select
             agent = db.execute(select(Agent).where(Agent.instance_name == data.instance_name)).scalar_one_or_none()
@@ -57,6 +57,8 @@ async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
                 db.add(agent)
                 db.commit()
         
+        # O retorno da criação na Evolution já pode conter o QR inicial
+        # mas a Consigo costuma chamar a rota /qr em seguida.
         return {"ok": True, "instance": data.instance_name}
     except Exception as e:
         logger.error(f"ERROR_CREATE_INSTANCE: {e}")
@@ -66,18 +68,21 @@ async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
 async def get_status(name: str, _ = Depends(verify_key)):
     evo = EvolutionClient()
     try:
-        status = await evo.get_connection_state(name)
-        return {"ok": True, "status": status}
+        # Retorna o estado bruto da conexão (CONNECTED, DISCONNECTED, etc)
+        res = await evo.get_connection_state(name)
+        return res # Retorna o objeto completo da Evolution
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"instance": {"state": "ERROR", "error": str(e)}}
 
 @router.get("/instances/{name}/qr")
 async def get_qr(name: str, _ = Depends(verify_key)):
     evo = EvolutionClient()
     try:
-        qr = await evo.get_qr_code(name)
-        return {"ok": True, "qr": qr}
+        # A Evolution retorna: { "code": "...", "base64": "..." }
+        res = await evo.get_qr_code(name)
+        return res # Retorna o objeto completo para a Consigo
     except Exception as e:
+        logger.error(f"ERROR_GET_QR: {e}")
         return {"ok": False, "error": str(e)}
 
 @router.post("/agents/inventory/start")
@@ -93,7 +98,7 @@ async def start_inventory(data: InventoryStart, _ = Depends(verify_key)):
     state["inventory_items"] = [item.dict() for item in (data.items or [])]
     state["notified_consigo"] = False
     
-    # Acorda o robô (remove pausa se houver)
+    # Remove qualquer pausa para o robô acordar
     store.set_paused(data.pdv_phone, 0)
     
     store.save_state(data.pdv_phone, state)
