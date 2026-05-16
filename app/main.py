@@ -92,20 +92,10 @@ def extract_text(msg: dict) -> str:
         if brm.get("selectedButtonId"):
             return brm.get("selectedButtonId") or ""
 
-    # respostas de lista
+    # respostas de listas
     lrm = msg.get("listResponseMessage") or {}
-    if isinstance(lrm, dict):
-        ssr = lrm.get("singleSelectReply") or {}
-        if isinstance(ssr, dict) and ssr.get("selectedRowId"):
-            return ssr.get("selectedRowId") or ""
-        if lrm.get("title"):
-            return lrm.get("title") or ""
-
-    # mídia com legenda
-    for k in ("imageMessage", "videoMessage", "documentMessage"):
-        m = msg.get(k) or {}
-        if isinstance(m, dict) and m.get("caption"):
-            return m.get("caption") or ""
+    if isinstance(lrm, dict) and lrm.get("title"):
+        return lrm.get("title") or ""
 
     return ""
 
@@ -149,55 +139,19 @@ def extract_payload(payload: dict):
     is_group = remote.endswith("@g.us")
 
     event = (payload.get("event") or "").lower()
-    status = ((d.get("status") if isinstance(d, dict) else None) or payload.get("status") or "").upper()
+    status = (d.get("status") or "").upper()
 
     return instance, message_id, from_number, text, from_me, is_group, event, status
 
 
-@app.get("/")
-async def root():
-    return {"ok": True}
-
-
 @app.get("/health")
-async def health():
-    return {"ok": True}
+def health():
+    return {"status": "ok", "time": time.time()}
 
 
 @app.get("/metrics")
-async def metrics():
+def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
-
-@app.get("/status")
-async def status():
-    # DB check (usa a mesma infra do app)
-    db_ok = True
-    db_err = None
-    try:
-        _ = get_last_leads(limit=1)
-    except Exception as e:
-        db_ok = False
-        db_err = str(e)
-
-    # Evolution reachability check
-    evo_ok = True
-    evo_err = None
-    try:
-        async with httpx.AsyncClient(timeout=5) as c:
-            r = await c.get(evo.base)
-            _ = r.status_code
-    except Exception as e:
-        evo_ok = False
-        evo_err = str(e)
-
-    return {
-        "ok": db_ok and evo_ok,
-        "db_ok": db_ok,
-        "db_err": db_err,
-        "evolution_ok": evo_ok,
-        "evolution_err": evo_err,
-    }
 
 
 @app.post("/webhook")
@@ -242,9 +196,6 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
     # -------------------------
     # ✅ Filtrar ACK/status/update (ruído)
     # -------------------------
-    # ✅ Filtrar ACK/status/update (ruído)
-# Importante: a Evolution pode enviar messages.upsert com status (ex: DELIVERY_ACK)
-# junto com uma mensagem real. Então só ignoramos "status" quando NÃO há texto.
     if "update" in event:
         WEBHOOK_IGNORED.labels("update").inc()
         WEBHOOK_LATENCY.observe(time.time() - start)
@@ -287,11 +238,11 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
         return {"ok": True, "ignored": "rate_limited"}
 
     # ---------------------------------------------------------
-    # 🔒 PORTARIA: Somente processa se houver sessão ATIVA
+    # 🔒 PORTARIA: Somente ignora se a sessão estiver EXPLICITAMENTE fechada
     # ---------------------------------------------------------
-    status = state.get("status")
-    if status == "closed":
-        logger.info("SESSION_CLOSED: ignoring message from number=%s", number)
+    state = store.get_state(number)
+    if state.get("status") == "closed":
+        logger.info("SESSION_CLOSED: ignoring number=%s", number)
         return {"ok": True, "session": "closed"}
 
     MSG_PROCESSED.inc()
@@ -303,77 +254,17 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
     # ================================
     try:
         ensure_first_contact(
-        client_id=client_id,
-        agent_id=agent_id,
-        instance=instance,
-        from_number=number
-    )
-        LEAD_FIRST_CONTACT.inc()
+            client_id=client_id,
+            agent_id=agent_id,
+            instance=instance,
+            from_number=number,
+        )
 
         intents = detect_intents(text)
-        if intents:
-            mark_intent(
-        client_id=client_id,
-        agent_id=agent_id,
-        instance=instance,
-        from_number=number,
-        intents=intents
-)
-            
-            LEAD_INTENT_MARKED.inc()
+        for it in intents:
+            mark_intent(client_id, agent_id, instance, number, it)
     except Exception as e:
-        # Não derruba o atendimento se o banco falhar
-        logger.error("LEAD_CAPTURE_ERROR: %s", e)
-
-    state = store.get_state(number)
-
-    # ========================================
-    # 🔐 Comando ADMIN: listar últimos leads
-    # ========================================
-    if (text or "").strip().lower() == "#leads":
-        if not ADMIN_NUMBER or number != ADMIN_NUMBER:
-            WEBHOOK_IGNORED.labels("admin_unauthorized").inc()
-            WEBHOOK_LATENCY.observe(time.time() - start)
-            return {"ok": True}
-
-        try:
-            leads = get_last_leads(limit=5)
-        except Exception as e:
-            logger.error("ADMIN_LEADS_ERROR: %s", e)
-            try:
-                await evo.send_text(instance, number, "Erro ao consultar leads no banco.")
-            except Exception as se:
-                logger.error("SEND_TEXT_ERROR(admin): %s", se)
-            WEBHOOK_LATENCY.observe(time.time() - start)
-            return {"ok": True}
-
-        if not leads:
-            try:
-                await evo.send_text(instance, number, "Nenhum lead encontrado.")
-            except Exception as se:
-                logger.error("SEND_TEXT_ERROR(admin): %s", se)
-            WEBHOOK_LATENCY.observe(time.time() - start)
-            return {"ok": True}
-
-        msg = "📋 Últimos Leads:\n\n"
-        for l in leads:
-            msg += (
-                f"👤 {l.get('nome') or '-'}\n"
-                f"📞 {l.get('telefone') or '-'}\n"
-                f"📝 {l.get('assunto') or '-'}\n"
-                f"🕒 {l.get('created_at') or '-'}\n"
-                f"🏷️ {l.get('status') or '-'} | {l.get('origem') or '-'}\n\n"
-            )
-
-        try:
-            await evo.send_text(instance, number, msg[:3500])
-            MSG_SENT_OK.inc()
-        except Exception as se:
-            MSG_SENT_ERR.inc()
-            logger.error("SEND_TEXT_ERROR(admin): %s", se)
-
-        WEBHOOK_LATENCY.observe(time.time() - start)
-        return {"ok": True}
+        logger.error("CAPTURE_ERROR: %s", e)
 
     # ========================================
     # 🚦 Roteamento de Fluxo (State Router)
@@ -459,4 +350,3 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
         logger.error("SEND_TEXT_ERROR: %s", e)
         WEBHOOK_LATENCY.observe(time.time() - start)
         return {"ok": True, "sent": False}
-    
