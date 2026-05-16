@@ -46,12 +46,12 @@ async def create_instance(data: InstanceCreate, _ = Depends(verify_key)):
         # Vincula no banco de dados local
         with SessionLocal() as db:
             from sqlalchemy import select
-            agent = db.execute(select(Agent).where(Agent.instance_name == data.instance_name)).scalar_one_or_none()
+            agent = db.execute(select(Agent).where(Agent.instance == data.instance_name)).scalar_one_or_none()
             if not agent:
                 agent = Agent(
                     id=data.instance_name,
                     client_id=data.client_id,
-                    instance_name=data.instance_name,
+                    instance=data.instance_name,
                     name=f"Agente {data.client_name}"
                 )
                 db.add(agent)
