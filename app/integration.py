@@ -9,12 +9,12 @@ router = APIRouter(prefix="/v1/integration")
 logger = logging.getLogger("agent")
 
 # Chave simples de segurança para a integração
-from .settings import WHATSAPP_AGENT_KEY
+from .settings import INTEGRATION_KEY
 
 async def verify_key(x_integration_key: str = Header(None)):
-    if not WHATSAPP_AGENT_KEY:
+    if not INTEGRATION_KEY:
         return # Se não configurado, ignora (dev)
-    if x_integration_key != WHATSAPP_AGENT_KEY:
+    if x_integration_key != INTEGRATION_KEY:
         raise HTTPException(status_code=403, detail="Invalid integration key")
 
 class InventoryItem(BaseModel):
