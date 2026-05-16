@@ -43,7 +43,7 @@ app.include_router(admin_router)
 app.include_router(integration_router)
 
 async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str, instance: str):
-    from .settings import CONSIGO_WEBHOOK_URL, WEBHOOK_API_KEY
+    from .settings import CONSIGO_WEBHOOK_URL, CONSIGO_WEBHOOK_KEY
     # PASSO 1: Garante que a URL tenha o caminho correto (SINGULAR)
     base_url = CONSIGO_WEBHOOK_URL.rstrip("/")
     target_url = f"{base_url}/webhook/whatsapp/inventory"
@@ -60,8 +60,8 @@ async def notify_consigo(closing_id: int, data: dict, raw_text: str, number: str
     }
     async with httpx.AsyncClient(timeout=10) as client:
         try:
-            # Enviamos usando o cabeçalho x-api-key conforme determinado
-            r = await client.post(target_url, json=payload, headers={"x-api-key": WEBHOOK_API_KEY})
+            # Enviamos usando o cabeçalho x-api-key com a chave certa
+            r = await client.post(target_url, json=payload, headers={"x-api-key": CONSIGO_WEBHOOK_KEY})
             logger.info(f"[WEBHOOK_LOG] Delivery result: {r.status_code}")
         except Exception as e:
             logger.error(f"[WEBHOOK_LOG] Delivery failed: {e}")
