@@ -104,11 +104,16 @@ async def webhook(req: Request, background_tasks: BackgroundTasks):
     # [WEBHOOK_LOG] Início do processamento
     instance, message_id, number, text, from_me, is_group, event, status = extract_payload(payload)
     
+    # PASSO 1: Filtrar apenas eventos de novas mensagens (ignora ACKs, updates, etc.)
+    allowed_events = ["messages.upsert", "messages_upsert"]
+    if event not in allowed_events:
+        return {"ok": True}
+        
     if from_me or is_group: return {"ok": True}
     
     # PASSO 2: Validar telefone antes de qualquer ação
     if not number or len(number) < 5:
-        logger.error(f"[EVOLUTION_LOG] Invalid phone number detected: '{number}'")
+        # Silenciamos o erro para não poluir o log, apenas ignoramos
         return {"ok": True}
 
     # PASSO 3: Bloquear mensagens após CLOSED (Check de Pausa)

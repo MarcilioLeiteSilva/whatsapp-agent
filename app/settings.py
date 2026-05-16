@@ -7,6 +7,7 @@ EVOLUTION_BASE_URL = os.getenv("EVOLUTION_BASE_URL", "").rstrip("/")
 EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "")
 EVOLUTION_TOKEN = os.getenv("EVOLUTION_TOKEN", "")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
-INTEGRATION_KEY = os.getenv("INTEGRATION_KEY", "consigo-secret-key")
+# A chave pode vir de INTEGRATION_KEY ou WHATSAPP_AGENT_KEY (padrão Easypanel)
+INTEGRATION_KEY = os.getenv("WHATSAPP_AGENT_KEY") or os.getenv("INTEGRATION_KEY", "consigo-secret-key")
 AGENT_BASE_URL = os.getenv("AGENT_BASE_URL", "") # URL deste serviço para a Evolution
 CONSIGO_WEBHOOK_URL = os.getenv("CONSIGO_WEBHOOK_URL", "") # URL da plataforma Consigo
